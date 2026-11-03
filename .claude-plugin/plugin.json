@@ -1,0 +1,33 @@
+{
+  "name": "vuln-prioritizer",
+  "version": "0.1.0",
+  "description": "Deterministic, context-aware vulnerability prioritization: fuses navi/Tenable inventory, open-source exploit-maturity intel and a CMDB asset-context overlay into a ranked, evidence-backed, SLA-dated remediation worklist (Tier 0-4). Read-only against the tenant.",
+  "license": "MIT",
+  "keywords": [
+    "vulnerability-management",
+    "prioritization",
+    "remediation",
+    "tenable",
+    "navi",
+    "cisa-kev",
+    "epss",
+    "vpr",
+    "sla",
+    "cybersecurity"
+  ],
+  "exchange": {
+    "listing": "CyberAgents Exchange",
+    "event": "SWARM Global 2026 (Tenable + Anthropic)",
+    "entry_type": "Skill",
+    "category": "vulnerability-management",
+    "title": "Context-Aware Vulnerability Prioritization",
+    "tagline": "Fix these, in this order, by this date, because X — deterministic and audit-defensible.",
+    "builds_on": [
+      { "name": "navi", "repo": "packetchaos/navi", "license": "MIT" },
+      { "name": "threat-intel-toolkit", "repo": "kevinmhorvath/threat-intel-toolkit", "license": "MIT" }
+    ],
+    "data_access": "read-only",
+    "requires_api_keys": false,
+    "repository": "https://github.com/REPLACE-ME/vuln-prioritizer"
+  }
+}

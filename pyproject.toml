@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vuln-prioritizer"
+version = "0.1.0"
+description = "Deterministic, context-aware vulnerability prioritization (two-layer remediation-tier model)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []  # stdlib only, by design
+
+[project.scripts]
+vuln-prioritizer = "vuln_prioritizer.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-m 'not live'"
+markers = ["live: hits real feeds over the network; skipped by default (run: pytest -m live)"]

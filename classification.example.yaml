@@ -1,0 +1,59 @@
+# ============================================================================
+# SYNTHETIC EXAMPLE — NOT REAL CMDB DATA.
+# Illustrative CMDB classification overlay for the SWARM lab's OT/ICS-style device naming.
+# Copy to a path OUTSIDE the repo and adapt it for a real tenant.
+#
+# Rules are evaluated top to bottom; FIRST MATCH WINS, so specific rules go first.
+# `match` keys (all must match): hostname, operating_system, fqdn, ip, asset_id
+# Patterns are case-insensitive globs (* ? [seq]). FQDN is empty on nearly all lab assets,
+# so this file matches on hostname and operating_system.
+#
+# Environment is descriptive and never excludes. Only `in_scope: false` excludes, and
+# excluded assets are counted and reported separately.
+# ============================================================================
+defaults: { environment: unknown, exposure: internal, criticality: standard, in_scope: true }
+
+assets:
+  # Lifecycle exclusion — covered by pre-prod patch testing. Placed FIRST so a dev-* host
+  # running Windows Server is excluded instead of being caught by the server rule below.
+  - match: { hostname: "dev-*" }
+    role: dev_host
+    environment: non_production
+    in_scope: false
+    reason: "dev/test hosts are covered by pre-prod patch testing"
+
+  # OT/ICS assets — business-critical by definition
+  - match: { hostname: "plc #*" }
+    role: ot_plc
+    environment: production
+    criticality: crown_jewel
+  - match: { hostname: "ot device #*" }
+    role: ot_device
+    environment: production
+    criticality: crown_jewel
+  - match: { hostname: "field device #*" }
+    role: field_device
+    environment: production
+    criticality: cj_support
+  - match: { hostname: "comm. adapter #*" }
+    role: comm_adapter
+    environment: production
+    criticality: cj_support
+
+  # Perimeter devices — internet-facing by role
+  - match: { operating_system: "Palo Alto Networks PAN-OS*" }
+    role: perimeter
+    environment: production
+    exposure: external
+
+  # Servers
+  - match: { operating_system: "Microsoft Windows Server*" }
+    role: server
+    environment: production
+
+  # End-user devices — non-production, but IN SCOPE
+  - match: { hostname: "endpoint #*" }
+    role: workstation
+    environment: non_production
+    criticality: standard
+    in_scope: true        # flip to false if the VM procedure is server-only

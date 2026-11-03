@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "vuln-prioritizer-marketplace",
+  "version": "0.1.0",
+  "description": "A single-plugin marketplace hosting the Context-Aware Vulnerability Prioritization skill (SWARM Global 2026).",
+  "owner": {
+    "name": "REPLACE-ME"
+  },
+  "plugins": [
+    {
+      "name": "vuln-prioritizer",
+      "description": "Ranked, evidence-backed, SLA-dated remediation worklist from navi.db + a CMDB overlay: two-layer deterministic scoring (CVSS x VPR/EPSS/KEV, conditioned by exposure, criticality, environment, scope). Read-only against the Tenable tenant.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "security"
+    }
+  ]
+}

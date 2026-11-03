@@ -1,0 +1,11 @@
+reference/
+navi.db
+.env
+*.key
+*.csv
+.venv/
+__pycache__/
+*.egg-info/
+# worklist outputs (real-data artifacts)
+out/
+worklist*.md
