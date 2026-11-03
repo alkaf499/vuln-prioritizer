@@ -1,5 +1,5 @@
 # SWARM Global — Context-Aware Vulnerability Prioritization Skill
-## Design & Build Spec (v0.8)
+## Design & Build Spec (v0.9)
 
 **Event:** SWARM Global (virtual), Nov 2–6 2026 · Tenable + Anthropic · open-source, publish to CyberAgents Exchange.
 **Entry type:** Skill (chains two existing Exchange entries) + a deterministic scoring tool; MCP server = stretch.
@@ -12,6 +12,13 @@
 >
 > **Read-only posture (LOCKED):** the skill **never writes to the Tenable tenant**. All reads, no tags,
 > no ACR writes, no scans. Mirrors navi's own write-gate ethos and is a safety claim worth making in the pitch.
+>
+> **v0.9 (pipeline/report only — no Layer-1/Layer-2 rule changes):** (1) Nessus **Info-severity**
+> findings (Service Detection, Traceroute, OS ID, CPE, MAC addresses, …) are not remediation work: they
+> are split off before enrichment/scoring, excluded from the ranked worklist, and reported in a separate
+> counted "Informational" section + `informational.csv` (same pattern as `in_scope: false`). (2) Within a
+> tier the worklist order is **KEV first** → VPR desc → CVSS desc → criticality → exposure → finding_id
+> (confirmed exploitation outranks a higher VPR with no exploit evidence).
 >
 > **v0.8 change:** a finding with **no probability signal** (impact-only, `reevaluate_probability`) is
 > **not eligible for the external-exposure uplift** and its final tier is **capped at Tier 3**. No

@@ -8,7 +8,9 @@ Deterministic, context-aware vulnerability prioritization. See `CLAUDE.md` for t
 vuln-prioritizer run --db ~/tenable-lab/navi.db --overlay my-overlay.yaml --out ./out [--offline] [--threat-first]
 ```
 
-Writes `worklist.md`, `worklist.csv`, `excluded.csv` to `--out` (gitignored) and prints the ranked list.
+Writes `worklist.md`, `worklist.csv`, `excluded.csv` (out-of-scope assets) and `informational.csv` (Info-severity
+scanner output, counted but never ranked) to `--out` (gitignored) and prints the ranked list. Within a tier the order
+is KEV first, then VPR, CVSS, criticality, exposure.
 `--offline` = no network (enrichment from `--intel-cache` JSON or "unknown"); add `--as-of <ISO8601>` for
 byte-identical output. Read-only against the tenant.
 

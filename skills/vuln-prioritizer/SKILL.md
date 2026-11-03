@@ -23,13 +23,13 @@ The skill reads `navi.db`, the CMDB overlay and public threat-intel feeds. It **
 vuln-prioritizer run --db <navi.db> --overlay <overlay.yaml> --out <dir>
 ```
 
-1. **Adapter + overlay** — navi.db → normalized findings; asset context resolved per asset (Tenable One `exposure_classes` → tags → overlay → unknown+flag).
+1. **Adapter + overlay** — navi.db → normalized findings; **Info-severity findings (scanner output like Service Detection, Traceroute, OS Identification — not vulnerabilities) are split off and never ranked**, only counted and listed in `informational.csv`; asset context resolved per asset (Tenable One `exposure_classes` → tags → overlay → unknown+flag).
 2. **Cheap gate** — severity ≥ High, CVSS ≥ 7, KEV, or EPSS ≥ 0.10 survive.
 3. **Enrich (memoized)** — threat-intel-toolkit's `exploit-availability-check`, one lookup per distinct CVE (KEV, EPSS, Metasploit, Nuclei, Exploit-DB, PoC aggregators). A dead feed becomes "unknown", never "not listed".
 4. **Score** — Layer 1 matrix (CVSS impact × VPR→EPSS→KEV-floor-High probability), then Layer 2 asset conditioning: one ±1 shift (external exposure +1 → T0 possible; non-prod / non-critical prod −1; business-critical baseline). `in_scope: false` is excluded and reported, never dropped.
-5. **Rank** — final tier, then VPR (desc; EPSS×10 if VPR is absent), CVSS (desc), asset criticality (crown jewel first), exposure (external first), finding id. The top of each tier is highest-signal first; stable and reproducible.
+5. **Rank** — final tier, then **KEV first** (confirmed exploitation outranks a higher VPR without exploit evidence), then VPR (desc; EPSS×10 if VPR is absent), CVSS (desc), asset criticality (crown jewel first), exposure (external first), finding id. The top of each tier is highest-signal first; stable and reproducible.
 
-Outputs in `--out`: `worklist.md`, `worklist.csv` (one row per finding: asset, role, CVE, tier, SLA, due date, evidence, resolved inputs and their sources, flags, divergence), `excluded.csv`. The ranked list is also printed to stdout — **relay the top of it to the user in chat** (tier, asset, CVE, evidence) and point to the files. Everything is stamped "as of <timestamp>".
+Outputs in `--out`: `worklist.md`, `worklist.csv` (one row per finding: asset, role, CVE, tier, SLA, due date, evidence, resolved inputs and their sources, flags, divergence), `excluded.csv` (out-of-scope assets), `informational.csv` (Info-severity scanner output, not ranked). Quote the informational count when reporting totals — it is not remediation work. The ranked list is also printed to stdout — **relay the top of it to the user in chat** (tier, asset, CVE, evidence) and point to the files. Everything is stamped "as of <timestamp>".
 
 ## Threat-first toggle
 

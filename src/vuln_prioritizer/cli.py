@@ -2,7 +2,8 @@
 
     vuln-prioritizer run --db <navi.db> --overlay <yaml> --out <dir> [--offline] [--threat-first]
 
-Writes ``worklist.md``, ``worklist.csv`` and ``excluded.csv`` into ``--out`` (gitignored) and
+Writes ``worklist.md``, ``worklist.csv``, ``excluded.csv`` (out-of-scope assets) and
+``informational.csv`` (Info-severity scanner output, not ranked) into ``--out`` (gitignored) and
 prints the ranked worklist to stdout. Reads navi.db + the overlay only; never writes to the
 Tenable tenant.
 """
@@ -18,7 +19,7 @@ from typing import Sequence
 
 from . import pipeline, worklist
 
-OUTPUT_FILES = ("worklist.md", "worklist.csv", "excluded.csv")
+OUTPUT_FILES = ("worklist.md", "worklist.csv", "excluded.csv", "informational.csv")
 
 
 def _parse_as_of(raw: str) -> datetime:
@@ -108,6 +109,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     (args.out / "worklist.csv").write_text(worklist.to_csv(rows, worklist.COLUMNS), encoding="utf-8")
     (args.out / "excluded.csv").write_text(
         worklist.to_csv(excluded, worklist.EXCLUDED_COLUMNS), encoding="utf-8"
+    )
+    (args.out / "informational.csv").write_text(
+        worklist.to_csv(worklist.build_informational_rows(result), worklist.INFORMATIONAL_COLUMNS),
+        encoding="utf-8",
     )
 
     sys.stdout.write(worklist.to_chat(result, rows, top=args.top))

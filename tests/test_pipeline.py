@@ -75,15 +75,16 @@ def test_full_worklist_is_produced(navi_db, tmp_path, capsys):
     out = tmp_path / "out"
     assert run_cli(navi_db, out) == 0
 
-    for name in ("worklist.md", "worklist.csv", "excluded.csv"):
+    for name in ("worklist.md", "worklist.csv", "excluded.csv", "informational.csv"):
         assert (out / name).is_file()
 
     rows = read_csv(out / "worklist.csv")
     assert rows, "empty worklist"
-    # 30 fixture findings, F30 is FIXED and skipped by the adapter
+    # 30 fixture findings: F30 is FIXED (skipped by the adapter) and F04 is Info-severity
+    # (reported separately, never ranked)
     result = pipeline.run_pipeline(navi_db, OVERLAY, offline=True, as_of=AS_OF)
-    assert result.scoring.total == 29
-    assert len(rows) + result.scoring.excluded_count == 29
+    assert result.scoring.total == 28 and len(result.informational) == 1
+    assert len(rows) + result.scoring.excluded_count == 28
 
     # chat output is the same ranking
     stdout = capsys.readouterr().out
@@ -118,7 +119,8 @@ def test_within_tier_vpr_desc_in_the_published_worklist(navi_db, tmp_path):
     run_cli(navi_db, tmp_path / "o")
     rows = read_csv(tmp_path / "o" / "worklist.csv")
     for a, b in zip(rows, rows[1:]):
-        if a["tier"] == b["tier"] and a["probability_source"] == b["probability_source"] == "vpr":
+        same_kev = a["kev"] == b["kev"]  # KEV orders ahead of VPR, so compare within a KEV group
+        if a["tier"] == b["tier"] and same_kev and a["probability_source"] == b["probability_source"] == "vpr":
             assert float(a["probability_value"]) >= float(b["probability_value"]), (a["finding_id"], b["finding_id"])
 
 
@@ -141,6 +143,70 @@ def test_offline_wording_rewrites_only_the_inner_clause():
         "CISA KEV status unknown (not consulted); exploit maturity unknown "
         "(Metasploit, Exploit-DB, Nuclei not consulted)"
     )
+
+
+def test_kev_findings_lead_their_tier(navi_db, tmp_path, cache_file):
+    run_cli(navi_db, tmp_path / "o", "--intel-cache", str(cache_file))  # adds KEV to CVE-2099-0002
+    rows = read_csv(tmp_path / "o" / "worklist.csv")
+    assert any(r["kev"] == "True" for r in rows) and any(r["kev"] == "False" for r in rows)
+    for a, b in zip(rows, rows[1:]):
+        if a["tier"] == b["tier"]:
+            assert not (a["kev"] == "False" and b["kev"] == "True"), (a["finding_id"], b["finding_id"])
+
+
+def test_informational_findings_are_reported_separately_and_never_ranked(navi_db, tmp_path):
+    out = tmp_path / "o"
+    run_cli(navi_db, out)
+
+    info = read_csv(out / "informational.csv")
+    assert [r["finding_id"] for r in info] == ["F04"]  # the fixture's Info-severity banner plugin
+    assert info[0]["severity"] == "INFO" and info[0]["asset"] == "web-prod-01"
+    assert info[0]["finding"] == "Synthetic Banner Disclosure N"
+    assert "F04" not in {r["finding_id"] for r in read_csv(out / "worklist.csv")}
+
+    md = (out / "worklist.md").read_text(encoding="utf-8")
+    assert "## Informational (1) — excluded from remediation ranking" in md
+    assert "Synthetic Banner Disclosure N" in md.split("## Informational")[1]
+    assert "informational (not remediation work): **1**" in md
+    assert "Findings loaded: **29**" in md  # 28 scored + 1 informational (FIXED F30 never loads)
+
+
+def test_split_informational_keys_off_severity_only():
+    from vuln_prioritizer.schema import Asset, Finding, Severity
+
+    def mk(fid, sev):
+        return Finding(finding_id=fid, asset=Asset(asset_id="a"), plugin_id="1", severity=sev)
+
+    rest, info = pipeline.split_informational(
+        [mk("a", Severity.INFO), mk("b", Severity.LOW), mk("c", None), mk("d", Severity.CRITICAL)]
+    )
+    assert [f.finding_id for f in info] == ["a"]
+    assert [f.finding_id for f in rest] == ["b", "c", "d"]  # unknown severity stays ranked
+
+
+LAB_OVERLAY = Path(__file__).resolve().parents[1] / "out" / "classification.lab.yaml"
+
+
+@pytest.mark.skipif(not LAB_OVERLAY.is_file(), reason="local lab overlay not present (out/ is gitignored)")
+def test_local_lab_overlay_parses_and_classifies_known_devices():
+    from vuln_prioritizer.context import Criticality, Environment, load_overlay
+    from vuln_prioritizer.schema import Asset
+
+    ov = load_overlay(LAB_OVERLAY)
+
+    def rule(host, os=None):
+        return ov.match(Asset(asset_id="x", hostname=host, operating_system=os))
+
+    for os in ("Cisco IOS 15.2(7)E", "Cisco IOS Software, C2960X Software"):
+        r = rule("cisco2960x", os)
+        assert (r.role, r.environment, r.criticality) == (
+            "network_device", Environment.PRODUCTION, Criticality.CROWN_JEWEL,
+        )
+    assert rule("n9k", "Linux Kernel 3.14 on Cisco Nexus Switch aci-n9000").role == "network_device"
+    assert rule("dc1").role == "domain_controller"
+    assert rule("plc #7").role == "ot_plc"
+    assert rule("work station #4").role == "workstation"
+    assert rule("eng. station #129").role == "eng_station"
 
 
 def test_kev_floor_and_exposure_uplift_visible_in_row(navi_db, tmp_path):
@@ -255,7 +321,7 @@ def test_run_is_read_only_for_the_database(navi_db, tmp_path):
 def test_overlay_is_optional_and_flags_context(navi_db):
     result = pipeline.run_pipeline(navi_db, None, offline=True, as_of=AS_OF)
     assert result.overlay_name is None
-    assert result.scoring.total == 29
+    assert result.scoring.total + len(result.informational) == 29
 
 
 # --------------------------------------------------------------------------

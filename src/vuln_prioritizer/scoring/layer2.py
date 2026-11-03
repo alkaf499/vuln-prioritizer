@@ -292,16 +292,18 @@ def _rank_key(sf: ScoredFinding) -> tuple:
     """Highest-signal first. Ascending sort on:
 
     1. final tier (T0 first)
-    2. probability value (VPR, or EPSS x10 when VPR is absent) — descending
-    3. CVSS impact score — descending (-1 when impact came from scan severity)
-    4. asset criticality: crown_jewel > cj_support > rto_defined > standard
-    5. exposure: external before internal
-    6. finding_id — total, stable final tiebreak
+    2. KEV — confirmed exploitation first; outranks a higher VPR with no exploit evidence
+    3. probability value (VPR, or EPSS x10 when VPR is absent) — descending
+    4. CVSS impact score — descending (-1 when impact came from scan severity)
+    5. asset criticality: crown_jewel > cj_support > rto_defined > standard
+    6. exposure: external before internal
+    7. finding_id — total, stable final tiebreak
     """
     ctx = sf.context
     score = sf.layer1.impact.score
     return (
         int(sf.final_tier) if sf.final_tier is not None else 99,
+        0 if sf.layer1.probability.kev else 1,
         -_probability_signal(sf),
         -(score if score is not None else -1.0),
         -CRITICALITY_ORDER[ctx.criticality.value],
@@ -313,7 +315,7 @@ def _rank_key(sf: ScoredFinding) -> tuple:
 @dataclass(frozen=True, slots=True)
 class ScoringRun:
     scored: tuple[ScoredFinding, ...]
-    """In-scope findings, ranked by ``_rank_key``: tier, then VPR desc, CVSS desc,
+    """In-scope findings, ranked by ``_rank_key``: tier, then KEV first, VPR desc, CVSS desc,
     criticality, exposure, finding_id."""
     excluded: tuple[ScoredFinding, ...]
     """Out-of-scope findings, reported separately (sorted by finding_id)."""

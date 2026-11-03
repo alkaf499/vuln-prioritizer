@@ -414,6 +414,36 @@ def test_rank_vpr_outranks_cvss():
     ) == ["b", "a"]
 
 
+def test_rank_kev_first_beats_a_higher_vpr_within_a_tier():
+    # Both land on T2 (Critical x High). The KEV'd one has the LOWER VPR and the LATER id, so only
+    # the KEV term can put it first: confirmed exploitation outranks higher VPR without exploit evidence.
+    assert _ranked(
+        ("a", "cj-1", dict(cvss=9.8, vpr=7.5)),
+        ("z", "cj-2", dict(cvss=9.8, vpr=3.0, kev=True)),
+    ) == ["z", "a"]
+
+
+def test_rank_kev_beats_higher_cvss_too_and_vpr_orders_within_the_kev_group():
+    assert _ranked(
+        ("a", "cj-1", dict(cvss=10.0, vpr=7.8)),
+        ("b", "cj-2", dict(cvss=9.0, vpr=3.0, kev=True)),
+        ("c", "cj-3", dict(cvss=9.0, vpr=3.3, kev=True)),
+    ) == ["c", "b", "a"]
+
+
+def test_rank_kev_never_outranks_a_more_urgent_tier():
+    # KEV is a tiebreak WITHIN a tier: a non-KEV T1 still sits above a KEV'd T2.
+    fs = [
+        finding("kev-t2", Asset(asset_id="as-1", hostname="cj-1"), cvss=9.8, vpr=3.0, kev=True),
+        finding("plain-t1", Asset(asset_id="as-2", hostname="cj-2"), cvss=9.8, vpr=9.5),
+    ]
+    run = score_findings(fs, overlay=RANK_OV)
+    assert [(s.finding_id, s.final_tier) for s in run.scored] == [
+        ("plain-t1", Tier.T1),
+        ("kev-t2", Tier.T2),
+    ]
+
+
 def test_rank_criticality_breaks_a_vpr_and_cvss_tie():
     assert _ranked(
         ("a", "sup-1", dict(cvss=9.8, vpr=9.5)),  # cj_support

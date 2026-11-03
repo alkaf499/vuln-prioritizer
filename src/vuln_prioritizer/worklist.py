@@ -1,8 +1,10 @@
 """Worklist rows + renderers (chat text, Markdown, CSV). Pure formatting, no scoring.
 
 Row order is the scorer's stable ranking (``scoring.layer2._rank_key``): final tier, then
-probability value (VPR; EPSS x10 if VPR is absent) desc, then CVSS desc, then asset
-criticality, then exposure (external first), then ``finding_id`` as the final total tiebreak.
+KEV (confirmed exploitation first), then probability value (VPR; EPSS x10 if VPR is absent)
+desc, then CVSS desc, then asset criticality, then exposure (external first), then
+``finding_id`` as the final total tiebreak. Info-severity findings are not ranked: they are
+listed separately (``build_informational_rows``).
 Due dates cannot break ties (all ``as_of`` + the same SLA within a tier). Same inputs and
 ``as_of`` give byte-identical output.
 """
@@ -34,6 +36,10 @@ COLUMNS: tuple[str, ...] = (
 
 EXCLUDED_COLUMNS: tuple[str, ...] = (
     "asset", "asset_id", "role", "overlay_rule", "findings", "reason", "in_scope_source", "as_of",
+)
+
+INFORMATIONAL_COLUMNS: tuple[str, ...] = (
+    "asset", "asset_id", "finding_id", "plugin_id", "finding", "port", "cves", "severity", "as_of",
 )
 
 
@@ -196,6 +202,51 @@ def build_excluded_rows(result: PipelineResult) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 # CSV
 # --------------------------------------------------------------------------
+def build_informational_rows(result: PipelineResult) -> list[dict[str, Any]]:
+    """Info-severity findings (scanner output, not remediation work), one row each, in a
+    deterministic order. Reported, never dropped."""
+    rows = [
+        {
+            "asset": f.asset.display_name,
+            "asset_id": f.asset.asset_id,
+            "finding_id": f.finding_id,
+            "plugin_id": f.plugin_id,
+            "finding": f.name or "",
+            "port": "" if f.port is None else f.port,
+            "cves": ";".join(f.cves),
+            "severity": f.severity.name if f.severity is not None else "",
+            "as_of": result.as_of.isoformat(),
+        }
+        for f in result.informational
+    ]
+    rows.sort(key=lambda r: (r["asset"], str(r["plugin_id"]), str(r["port"]), r["finding_id"]))
+    return rows
+
+
+def _informational_section(info: list[dict[str, Any]], limit: int = 20) -> list[str]:
+    """Markdown for the informational section: counts by plugin, full list in the CSV."""
+    L = [
+        f"## Informational ({len(info)}) — excluded from remediation ranking",
+        "",
+        "_Nessus Info-severity plugins (service detection, OS identification, traceroute, CPE, MAC "
+        "addresses, scan information, ...) describe what the scanner learned; they are not "
+        "vulnerabilities. Counted here, never silently dropped; every row is in `informational.csv`._",
+        "",
+    ]
+    if not info:
+        return L + ["_No informational findings._", ""]
+    by_plugin: dict[str, list[Any]] = defaultdict(lambda: [0, set()])
+    for r in info:
+        slot = by_plugin[r["finding"] or f"plugin {r['plugin_id']}"]
+        slot[0] += 1
+        slot[1].add(r["asset_id"])
+    ranked = sorted(by_plugin.items(), key=lambda kv: (-kv[1][0], kv[0]))
+    L += _table(["Plugin", "Findings", "Assets"], [[n, c, len(a)] for n, (c, a) in ranked[:limit]])
+    if len(ranked) > limit:
+        L += ["", f"_… and {len(ranked) - limit} more plugin(s)._"]
+    return L + [""]
+
+
 def _csv_cell(v: Any) -> Any:
     """Neutralize spreadsheet formula injection from tenant-controlled strings."""
     if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
@@ -232,6 +283,8 @@ def _kv_table(d: dict[str, Any], key_header: str) -> list[str]:
 
 def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: list[dict[str, Any]]) -> str:
     run, st = result.scoring, result.enrichment.stats
+    info = build_informational_rows(result)
+    loaded = run.total + len(info)
     view = "threat-first (threat-linked findings only)" if result.threat_first else "asset-first (all in-scope findings)"
     if result.offline and result.intel_cache_name:
         mode = (
@@ -261,8 +314,9 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
         "",
         "## Summary",
         "",
-        f"- Findings loaded: **{run.total}** → ranked worklist: **{len(rows)}**, "
-        f"excluded (out of scope): **{run.excluded_count}** findings on **{run.excluded_asset_count}** asset(s)",
+        f"- Findings loaded: **{loaded}** → ranked worklist: **{len(rows)}**, "
+        f"excluded (out of scope): **{run.excluded_count}** findings on **{run.excluded_asset_count}** asset(s), "
+        f"informational (not remediation work): **{len(info)}**",
     ]
     if result.threat_first:
         L.append(
@@ -295,8 +349,8 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
         "",
         "## Ranked worklist",
         "",
-        "_Order: final tier → VPR (desc) → CVSS (desc) → asset criticality → exposure (external first) "
-        "→ finding id (stable, reproducible). "
+        "_Order: final tier → KEV (confirmed exploitation first) → VPR (desc) → CVSS (desc) → asset "
+        "criticality → exposure (external first) → finding id (stable, reproducible). "
         "Each row shows the evidence and every resolved input with its source._",
         "",
     ]
@@ -330,8 +384,9 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
         )
     else:
         L.append("_No assets excluded._")
+    L.append("")
+    L += _informational_section(info)
     L += [
-        "",
         "---",
         "_Facts come from navi.db, the CMDB overlay and public feeds; the model only orchestrates. "
         "Same inputs and as-of time reproduce this report byte for byte._",
@@ -349,8 +404,9 @@ def to_chat(result: PipelineResult, rows: list[dict[str, Any]], *, top: int = 15
         f"Vulnerability worklist — as of {result.as_of.isoformat()} "
         f"({'threat-first' if result.threat_first else 'asset-first'}, "
         f"{'offline' if result.offline else 'live'})",
-        f"{run.total} findings: {len(rows)} ranked, {run.excluded_count} excluded "
-        f"({run.excluded_asset_count} asset(s) out of scope)",
+        f"{run.total + len(result.informational)} findings: {len(rows)} ranked, "
+        f"{run.excluded_count} excluded ({run.excluded_asset_count} asset(s) out of scope), "
+        f"{len(result.informational)} informational (not ranked; see informational.csv)",
         "by tier: " + (", ".join(f"{k}={v}" for k, v in run.by_tier().items()) or "none"),
         "",
     ]

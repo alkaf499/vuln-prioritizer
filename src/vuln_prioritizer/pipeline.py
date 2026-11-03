@@ -11,6 +11,12 @@ The overlay is applied inside the scorer's context resolver; the order above is
 data-dependency order (enrichment must precede scoring so the KEV floor and EPSS fallback
 see the merged inputs).
 
+Informational filter
+--------------------
+Info-severity findings are split off right after loading (``split_informational``): they are
+neither enriched, scored nor ranked, and are reported separately (counted, listed in
+``informational.csv``), the same pattern as ``in_scope: false`` exclusions.
+
 Threat-intel sources
 --------------------
 * ``offline=True``: no network. Enrichment answers from ``intel_cache`` (read-only; a frozen
@@ -43,7 +49,7 @@ from .enrichment.cache import CachingAssess, IntelCache
 from .enrichment.enrich import EnrichedFinding, EnrichmentReport, enrich_findings, passes_gate
 from .enrichment.offline import offline_assess
 from .enrichment.toolkit import CVE_RE, make_default_assess, make_local_assess
-from .schema import Finding
+from .schema import Finding, Severity
 from .scoring.layer2 import ScoredFinding, ScoringRun, score_findings
 
 THREAT_MATURITIES = frozenset({"weaponized", "public_exploit"})
@@ -103,6 +109,22 @@ class PipelineResult:
     lookups: LookupStats | None = None
     enrich_mode: str | None = None
     """``local`` / ``full`` for live runs; ``None`` offline (nothing was looked up)."""
+    informational: tuple[Finding, ...] = ()
+    """Info-severity findings (scanner output, not vulnerabilities): never enriched, scored or
+    ranked; reported in their own section / ``informational.csv``."""
+
+
+def split_informational(findings: list[Finding]) -> tuple[list[Finding], list[Finding]]:
+    """``(remediation candidates, informational)`` keyed off the scan-source severity field.
+
+    Nessus Info-severity plugins (Service Detection, Traceroute, OS Identification, CPE, MAC
+    addresses, ...) describe what the scanner learned; they are not remediation work. A pipeline
+    filter, not a scoring rule: Layer 1 / Layer 2 are untouched. Order is preserved."""
+    rest: list[Finding] = []
+    info: list[Finding] = []
+    for f in findings:
+        (info if f.severity is Severity.INFO else rest).append(f)
+    return rest, info
 
 
 def normalize_as_of(as_of: datetime | None) -> datetime:
@@ -175,7 +197,7 @@ def run_pipeline(
     if max_lookups is not None and (offline or max_lookups < 0):
         raise ValueError("max_lookups applies to live runs and must be >= 0")
 
-    findings = load_findings(db_path, include_fixed=include_fixed)
+    findings, informational = split_informational(load_findings(db_path, include_fixed=include_fixed))
     overlay: Overlay | None = load_overlay(overlay_path) if overlay_path else None
 
     cache: IntelCache | None = None
@@ -248,4 +270,5 @@ def run_pipeline(
         if caching
         else None,
         enrich_mode=enrich if caching else None,
+        informational=tuple(informational),
     )
