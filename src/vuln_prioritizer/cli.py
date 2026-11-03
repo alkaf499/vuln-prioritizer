@@ -1,6 +1,7 @@
 """``vuln-prioritizer run`` — the single entrypoint for the whole pipeline (CLAUDE.md §5).
 
-    vuln-prioritizer run --db <navi.db> --overlay <yaml> --out <dir> [--offline] [--threat-first]
+    vuln-prioritizer run --db <navi.db> --overlay <yaml> [--overlay <yaml> ...] --out <dir> [--offline] [--threat-first]
+    vuln-prioritizer classify --db <navi.db> --out out/classification.ai.yaml   (optional, LLM; drafts an overlay)
 
 Writes ``worklist.md``, ``worklist.csv``, ``excluded.csv`` (out-of-scope assets) and
 ``informational.csv`` (Info-severity scanner output, not ranked) and ``executive_report.md``
@@ -39,8 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     r = sub.add_parser("run", help="run the full pipeline and emit the ranked worklist")
     r.add_argument("--db", required=True, type=Path, help="path to navi.db (opened read-only)")
-    r.add_argument("--overlay", type=Path, help="CMDB classification overlay (YAML); "
-                   "omitted => every asset is unknown/internal and flagged for re-evaluation")
+    r.add_argument("--overlay", type=Path, action="append", metavar="FILE",
+                   help="CMDB classification overlay (YAML); omitted => every asset is unknown/internal "
+                        "and flagged for re-evaluation. Repeatable: overlays are consulted IN THE ORDER "
+                        "GIVEN and the first overlay with a matching rule wins, so list the hand-written "
+                        "overlay before any AI-drafted one. Provenance names the winning file and rule")
     r.add_argument("--out", required=True, type=Path, help="output directory (created if absent)")
     r.add_argument("--offline", action="store_true",
                    help="no network: enrichment answers from --intel-cache (read-only) or 'unknown' (deterministic)")
@@ -69,12 +73,48 @@ def build_parser() -> argparse.ArgumentParser:
                         "time saved (an operator assumption, labelled as such; omitted by default)")
     r.add_argument("--no-timing", action="store_true",
                    help="omit the measured time-to-worklist line so executive_report.md is byte-reproducible")
+
+    # `classify` is the OPTIONAL LLM classifier (S4.5). Its arguments are declared here, but the
+    # classifier package is imported only when the subcommand is dispatched (see main), so `run`
+    # and the scoring path never load it: the determinism firewall.
+    c = sub.add_parser(
+        "classify",
+        help="OPTIONAL: draft an overlay for unclassified assets with an LLM (needs ANTHROPIC_API_KEY)",
+        description="Draft a classification overlay for assets no hand rule covers. Writes a DRAFT for "
+                    "human review; `run` never consumes it automatically - pass it as a later --overlay. "
+                    "Without ANTHROPIC_API_KEY it logs and does nothing.",
+    )
+    c.add_argument("--db", required=True, type=Path, help="path to navi.db (opened read-only)")
+    c.add_argument("--out", type=Path, default=Path("out/classification.ai.yaml"),
+                   help="draft overlay to write (default out/classification.ai.yaml; tenant-derived, gitignored)")
+    c.add_argument("--overlay", type=Path, action="append", metavar="FILE",
+                   help="preceding overlay(s), repeatable: assets they already classify are skipped "
+                        "with --only-unclassified")
+    c.add_argument("--only-unclassified", action=argparse.BooleanOptionalAction, default=True,
+                   help="classify only assets the preceding --overlay files leave unknown (default); "
+                        "--no-only-unclassified sends every asset")
+    c.add_argument("--model", metavar="ID",
+                   help="model id (default claude-haiku-5-5, a fast/cheap model)")
+    c.add_argument("--batch", type=int, metavar="N", help="assets per API request (default 20)")
+    c.add_argument("--min-confidence", type=float, metavar="X",
+                   help="abstain below this confidence (default 0.7; external exposure and non-standard "
+                        "criticality need at least 0.9)")
+    c.add_argument("--cache", type=Path, metavar="FILE",
+                   help="resumable (hostname, OS) cache; default: next to --out (<out>.cache.json)")
+    c.add_argument("--limit", type=int, metavar="N",
+                   help="classify at most N distinct (hostname, OS) targets (sorted, so reruns continue)")
+    c.add_argument("--as-of", metavar="YYYY-MM-DD", help="date stamped into each rule's source (default: today, UTC)")
+    c.add_argument("--dry-run", action="store_true", help="count what would be sent; send and write nothing")
     return p
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "classify":
+        from .classifier.cli import run_classify  # lazy: keeps the classifier off the `run` path
+
+        return run_classify(args)
     if args.max_lookups is not None and (args.offline or args.max_lookups < 0):
         parser.error("--max-lookups applies to live runs only (not --offline) and must be >= 0")
     if args.progress_every < 0:

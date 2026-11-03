@@ -41,10 +41,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .adapters.navi import load_findings
-from .context import Overlay, load_overlay
+from .context import Overlay, OverlaySet, load_overlays, overlay_paths
 from .enrichment.cache import CachingAssess, IntelCache
 from .enrichment.enrich import EnrichedFinding, EnrichmentReport, enrich_findings, passes_gate
 from .enrichment.offline import offline_assess
@@ -142,7 +142,7 @@ def normalize_as_of(as_of: datetime | None) -> datetime:
 
 
 def priority_cves(
-    findings: list[Finding], overlay: Overlay | None, as_of: datetime
+    findings: list[Finding], overlay: Overlay | OverlaySet | None, as_of: datetime
 ) -> list[str]:
     """Distinct CVEs the gate wants enriched, most important first.
 
@@ -170,7 +170,7 @@ def priority_cves(
 
 def run_pipeline(
     db_path: str | Path,
-    overlay_path: str | Path | None = None,
+    overlay_path: str | Path | Sequence[str | Path] | None = None,
     *,
     offline: bool = False,
     threat_first: bool = False,
@@ -207,7 +207,11 @@ def run_pipeline(
         raise ValueError("max_lookups applies to live runs and must be >= 0")
 
     findings, informational = split_informational(load_findings(db_path, include_fixed=include_fixed))
-    overlay: Overlay | None = load_overlay(overlay_path) if overlay_path else None
+    # one path or several; several are consulted in the order given (first match wins), so a
+    # hand overlay listed before an AI-drafted one always beats it. The overlay is plain data
+    # to the pipeline: whoever wrote the file (human or classifier) is not known to it.
+    overlay_files = overlay_paths(overlay_path)
+    overlay: Overlay | OverlaySet | None = load_overlays(overlay_files)
 
     cache: IntelCache | None = None
     caching: CachingAssess | None = None
@@ -259,7 +263,7 @@ def run_pipeline(
         offline=offline,
         threat_first=threat_first,
         source_name=Path(db_path).name,
-        overlay_name=Path(overlay_path).name if overlay_path else None,
+        overlay_name=", ".join(p.name for p in overlay_files) if overlay_files else None,
         scoring=run,
         enrichment=report,
         enriched=enriched,

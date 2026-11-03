@@ -9,7 +9,18 @@ from .model import (
     Exposure,
     Resolved,
 )
-from .overlay import Overlay, OverlayDefaults, OverlayError, OverlayRule, load_overlay, parse_overlay
+from .overlay import (
+    Overlay,
+    OverlayDefaults,
+    OverlayError,
+    OverlayRule,
+    OverlaySet,
+    load_overlay,
+    load_overlays,
+    overlay_origins,
+    overlay_paths,
+    parse_overlay,
+)
 from .resolver import (
     DEFAULT_ACR_CROWN_JEWEL_MIN,
     DEFAULT_TAG_CONVENTION,
@@ -31,10 +42,14 @@ __all__ = [
     "OverlayDefaults",
     "OverlayError",
     "OverlayRule",
+    "OverlaySet",
     "Resolved",
     "TagConvention",
     "ip_derived_exposure",
     "load_overlay",
+    "load_overlays",
+    "overlay_origins",
+    "overlay_paths",
     "parse_overlay",
     "resolve_context",
 ]

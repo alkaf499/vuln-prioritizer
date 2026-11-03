@@ -18,9 +18,10 @@ Read-only: this module only reads a local file.
 from __future__ import annotations
 
 import fnmatch
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Iterable, NamedTuple, Sequence
 
 from ..schema import Asset
 from .model import (
@@ -253,11 +254,20 @@ class OverlayRule:
     in_scope: bool | None = None
     reason: str | None = None
     """Free-text reason, surfaced as the exclusion reason when ``in_scope`` is false."""
+    origin: str | None = None
+    """Overlay file the rule came from. Stamped only when several overlays are combined
+    (``load_overlays``); a single overlay keeps today's label byte for byte."""
+    source: str | None = None
+    """Free-text provenance of the rule (e.g. ``ai-classifier (<model>, <date>, conf=0.93)``).
+    Informational only; never used for matching."""
+    rationale: str | None = None
+    """One-line why, for human review. Informational only."""
 
     @property
     def label(self) -> str:
         role = f" ({self.role})" if self.role else ""
-        return f"rule {self.index + 1}{role}"
+        where = f"{self.origin} " if self.origin else ""
+        return f"{where}rule {self.index + 1}{role}"
 
     def matches(self, asset: Asset) -> bool:
         for fld, pattern in self.match:
@@ -282,7 +292,10 @@ class Overlay:
         return None
 
 
-_RULE_KEYS = {"match", "role", "environment", "exposure", "criticality", "in_scope", "reason"}
+_RULE_KEYS = {
+    "match", "role", "environment", "exposure", "criticality", "in_scope", "reason",
+    "source", "rationale",
+}  # fmt: skip
 _DEFAULT_KEYS = {"environment", "exposure", "criticality", "in_scope", "role"}
 
 
@@ -363,6 +376,8 @@ def overlay_from_mapping(data: Any) -> Overlay:
                 criticality=_enum_attr(raw.get("criticality"), parse_criticality, "criticality", where),
                 in_scope=_bool_attr(raw.get("in_scope"), where),
                 reason=None if raw.get("reason") is None else str(raw["reason"]),
+                source=None if raw.get("source") is None else str(raw["source"]),
+                rationale=None if raw.get("rationale") is None else str(raw["rationale"]),
             )
         )
     return Overlay(defaults=defaults, rules=tuple(rules))
@@ -375,3 +390,64 @@ def parse_overlay(text: str) -> Overlay:
 def load_overlay(path: str | Path) -> Overlay:
     """Read and parse an overlay file (read-only)."""
     return parse_overlay(Path(path).read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------
+# several overlays, consulted in the order given
+# --------------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class OverlaySet:
+    """Overlays consulted IN ORDER: the first overlay holding a matching rule wins, so a
+    hand-written overlay listed first always beats an AI-drafted one listed after it.
+
+    Drop-in for :class:`Overlay` wherever the resolver reads ``match`` / ``defaults``.
+    ``defaults`` are the FIRST overlay's (the highest-authority one). Rules carry their
+    ``origin`` file so provenance names the overlay that resolved each asset."""
+
+    overlays: tuple[Overlay, ...] = ()
+
+    @property
+    def defaults(self) -> OverlayDefaults:
+        return self.overlays[0].defaults if self.overlays else OverlayDefaults()
+
+    @property
+    def rules(self) -> tuple[OverlayRule, ...]:
+        return tuple(r for o in self.overlays for r in o.rules)
+
+    def match(self, asset: Asset) -> OverlayRule | None:
+        for overlay in self.overlays:
+            rule = overlay.match(asset)
+            if rule is not None:
+                return rule
+        return None
+
+
+def overlay_paths(spec: "str | Path | Iterable[str | Path] | None") -> tuple[Path, ...]:
+    """Normalize ``--overlay`` input (nothing / one path / many paths) to a tuple of paths."""
+    if spec is None:
+        return ()
+    if isinstance(spec, (str, os.PathLike)):
+        return (Path(spec),)
+    return tuple(Path(p) for p in spec)
+
+
+def overlay_origins(paths: Sequence[Path]) -> list[str]:
+    """Display name per overlay: the file name; a repeated name is disambiguated by position."""
+    names = [p.name for p in paths]
+    return [n if names.count(n) == 1 else f"#{i + 1}:{n}" for i, n in enumerate(names)]
+
+
+def load_overlays(spec: "str | Path | Iterable[str | Path] | None") -> "Overlay | OverlaySet | None":
+    """``None`` for no overlay; the plain :class:`Overlay` for exactly one (behaviour and
+    provenance exactly as before multi-overlay support); an :class:`OverlaySet` for several,
+    each rule stamped with the file it came from. Read-only."""
+    paths = overlay_paths(spec)
+    if not paths:
+        return None
+    if len(paths) == 1:
+        return load_overlay(paths[0])
+    loaded: list[Overlay] = []
+    for path, origin in zip(paths, overlay_origins(paths)):
+        o = load_overlay(path)
+        loaded.append(replace(o, rules=tuple(replace(r, origin=origin) for r in o.rules)))
+    return OverlaySet(overlays=tuple(loaded))

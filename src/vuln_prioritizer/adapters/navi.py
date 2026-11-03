@@ -263,6 +263,16 @@ def _load_epss(
     return out
 
 
+def load_assets(db_path: str | Path) -> list[Asset]:
+    """Every asset in ``db_path`` (read-only), ordered by uuid. For tools that classify
+    assets without needing their findings."""
+    with closing(connect_readonly(db_path)) as conn:
+        tables = _tables(conn)
+        if "assets" not in tables:
+            raise NaviSchemaError("navi db is missing required table(s): assets")
+        return list(_load_assets(conn, tables).values())
+
+
 _VULNS_SQL = """
 SELECT v.finding_id, v.asset_uuid, v.plugin_id, v.plugin_name, v.port, v.protocol,
        v.state, v.first_found, v.last_found, v.severity AS v_severity, v.cves AS v_cves,

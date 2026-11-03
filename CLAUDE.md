@@ -270,7 +270,16 @@ Copy-paste kickoff prompts in **`session-prompts.md`**.
 - **S5 · Exec report + polish** — exec report incl. **toil-saved metric**, per-`role` grouping, SLA-breach
   view (audit); README; CI healthcheck; demo script.
 
-Dependency graph: S0 → {S1 → S2, S3} → S4 → S5.
+- **S4.5 · Optional LLM asset classifier ("Layer B")** — `classifier/` + `vuln-prioritizer classify`. Drafts an
+  overlay (`out/classification.ai.yaml`, same format, per-rule `source`/`rationale`) for assets no hand rule
+  covers. **Determinism firewall:** `scoring/`, `pipeline` and `run` never import or call it (import-graph
+  tests enforce this); the pipeline consumes the draft only as an ordinary overlay FILE, passed explicitly as a
+  *later* repeatable `--overlay` (first listed overlay with a matching rule wins; provenance names the file).
+  Model output is untrusted: exact-enum validation, closed role list, abstain on low confidence / unknown
+  environment / high-privilege results below 0.9; never emits `in_scope`. Stdlib `urllib`, key from
+  `ANTHROPIC_API_KEY` only; no key ⇒ logs and skips. The draft and its cache are tenant-derived: never commit.
+
+Dependency graph: S0 → {S1 → S2, S3} → S4 → S5; S4.5 sits beside S4 and feeds only overlay files.
 
 ---
 

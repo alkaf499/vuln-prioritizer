@@ -15,3 +15,6 @@ informational.csv
 # frozen threat-intel caches list which CVEs a tenant holds; keep them under out/
 intel*.json
 demo-navi.db
+# LLM-drafted overlay + its cache list real tenant hostnames; never commit (default home: out/)
+classification.ai*
+*.ai.yaml
