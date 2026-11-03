@@ -20,9 +20,10 @@ from .context import AssetContext, ContextSource
 from .pipeline import PipelineResult, threat_signals
 from .scoring.layer2 import ScoredFinding
 from .scoring.tiers import Tier
+from .sla import sla_status
 
 COLUMNS: tuple[str, ...] = (
-    "rank", "tier", "sla", "due", "asset", "asset_id", "role", "role_source", "overlay_rule",
+    "rank", "tier", "sla", "due", "first_found", "discovery_due", "sla_status", "overdue_days", "asset", "asset_id", "role", "role_source", "overlay_rule",
     "finding_id", "plugin_id", "finding", "cves", "port",
     "evidence", "inputs", "explanation",
     "impact_band", "impact_source", "impact_score",
@@ -125,11 +126,18 @@ def _row(rank: int, sf: ScoredFinding, result: PipelineResult) -> dict[str, Any]
     evidence = compact_evidence(raw_evidence)
     if not_consulted and ef.degraded:
         evidence = f"[{not_consulted}] {evidence}"
+    st = sla_status(f.first_found, sf.final_tier, result.as_of)
     return {
         "rank": rank,
         "tier": rec["final_tier"],
         "sla": rec["final_sla"],
+        # `due` = fix_by = as_of + tier SLA (forward-looking); `discovery_due` = first_found + SLA
+        # (audit view); both are recorded, `sla_status` compares discovery_due with as_of
         "due": rec["due"] or "",
+        "first_found": f.first_found.isoformat() if f.first_found else "",
+        "discovery_due": st.discovery_due.isoformat() if st.discovery_due else "",
+        "sla_status": st.label,
+        "overdue_days": st.overdue_days if st.breached else "",
         "asset": sf.asset_name,
         "asset_id": sf.asset_id,
         "role": rec["role"] or "",
@@ -281,6 +289,17 @@ def _kv_table(d: dict[str, Any], key_header: str) -> list[str]:
     return _table([key_header, "count"], [[k, v] for k, v in d.items()]) if d else ["_none_"]
 
 
+def intel_dating(result: PipelineResult) -> str:
+    """``feeds actually fetched <real time>``: the 'intel as of' label can be injected
+    (``--as-of``), so the real fetch time is reported beside it. Pre-S5 / hand-made caches say
+    'not recorded'. Appended AFTER the existing '(intel as of ...)' wording, never inside it."""
+    text = f"feeds actually fetched {result.intel_fetched_at or 'not recorded'}"
+    upd = result.intel_fetched_updated
+    if upd and upd != result.intel_fetched_at:
+        text += f", last refreshed {upd}"
+    return text
+
+
 def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: list[dict[str, Any]]) -> str:
     run, st = result.scoring, result.enrichment.stats
     info = build_informational_rows(result)
@@ -289,7 +308,8 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
     if result.offline and result.intel_cache_name:
         mode = (
             f"offline replay of frozen threat-intel cache `{result.intel_cache_name}` "
-            f"(intel as of {result.intel_as_of or 'unstamped'}; deterministic, no network)"
+            f"(intel as of {result.intel_as_of or 'unstamped'}; deterministic, no network); "
+            f"{intel_dating(result)}"
         )
     elif result.offline:
         mode = "offline (deterministic; live threat-intel NOT consulted)"
@@ -300,7 +320,8 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
             else "full: cached feeds + per-CVE EPSS and PoC aggregators"
         )
         cached = (
-            f", written through cache `{result.intel_cache_name}` (intel as of {result.intel_as_of or 'unstamped'})"
+            f", written through cache `{result.intel_cache_name}` (intel as of {result.intel_as_of or 'unstamped'}); "
+            f"{intel_dating(result)}"
             if result.intel_cache_name
             else ""
         )
@@ -365,11 +386,11 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
             continue
         L += [f"### {tier.label} — {tier.sla_label} ({len(group)})", ""]
         L += _table(
-            ["#", "Asset", "Role", "CVE(s)", "Finding", "Due", "Evidence", "Inputs / sources", "Flags"],
+            ["#", "Asset", "Role", "CVE(s)", "Finding", "Fix by", "SLA status", "Evidence", "Inputs / sources", "Flags"],
             [
                 [
                     r["rank"], r["asset"], r["role"], r["cves"], r["finding"],
-                    r["due"] or "next patch cycle", r["evidence"], r["inputs"],
+                    r["due"] or "next patch cycle", r["sla_status"], r["evidence"], r["inputs"],
                     "; ".join(x for x in (r["flags"], r["divergence"]) if x),
                 ]
                 for r in group
@@ -411,7 +432,11 @@ def to_chat(result: PipelineResult, rows: list[dict[str, Any]], *, top: int = 15
         "",
     ]
     if result.intel_cache_name:
-        L.insert(3, f"threat-intel cache: {result.intel_cache_name} (intel as of {result.intel_as_of or 'unstamped'})")
+        L.insert(
+            3,
+            f"threat-intel cache: {result.intel_cache_name} (intel as of {result.intel_as_of or 'unstamped'}); "
+            f"{intel_dating(result)}",
+        )
     if result.lookups is not None and result.lookups.deferred:
         L.insert(3, f"{result.lookups.deferred} CVE(s) deferred by --max-lookups; re-run with the same cache to continue")
     for r in rows[:top]:

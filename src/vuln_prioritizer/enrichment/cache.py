@@ -11,7 +11,10 @@ File format (a superset of the original offline cache; old files without ``_meta
      "CVE-2024-0001": { ...upstream exploit_check.assess()-shaped dict... }, ...}
 
 ``as_of`` is the run time that first created the file (the demo-facing date of the frozen intel);
-``updated`` is the last run that wrote to it. Both come from the pipeline's ``as_of`` (injectable).
+``updated`` is the last run that wrote to it. Both come from the pipeline's ``as_of`` (injectable),
+so they are LABELS. ``fetched_at`` / ``fetched_updated`` (optional, added by live runs) are the real
+wall-clock times the feeds were actually queried: when ``--as-of`` is injected for a reproducible
+demo, they are what tells an auditor how old the intel really is.
 
 Every fresh lookup is passed through a JSON round-trip *before* it is used, so the first (live)
 run and every later replay see byte-identical data (tuples -> lists, ``None`` keys, etc.).
@@ -81,6 +84,9 @@ class IntelCache:
         self.entries: dict[str, dict[str, Any]] = entries if entries is not None else {}
         self.meta: dict[str, Any] = meta if meta is not None else {}
         self.dirty = False
+        self.changed = False
+        """Entries were added this session. Unlike ``dirty`` it survives the periodic mid-run saves,
+        so ``stamp`` still knows this run fetched something."""
 
     @classmethod
     def load(cls, path: str | os.PathLike[str]) -> "IntelCache":
@@ -103,11 +109,38 @@ class IntelCache:
     def put(self, cve: str, raw: Mapping[str, Any]) -> None:
         self.entries[cve.upper()] = dict(raw)
         self.dirty = True
+        self.changed = True
 
-    def stamp(self, as_of: datetime) -> None:
+    @property
+    def fetched_at(self) -> str | None:
+        """REAL wall-clock time the file's intel was first fetched (``None`` for files that
+        predate this field, or that were hand-made). Distinct from ``as_of``, which is the run's
+        (possibly injected) label."""
+        v = self.meta.get("fetched_at")
+        return str(v) if v else None
+
+    @property
+    def fetched_updated(self) -> str | None:
+        """Real wall-clock time of the last run that added entries."""
+        v = self.meta.get("fetched_updated")
+        return str(v) if v else None
+
+    def stamp(self, as_of: datetime, fetched_at: datetime | None = None) -> None:
+        """Date the file. ``as_of`` is the run's label (injectable for reproducible demos);
+        ``fetched_at`` is the real clock time of the fetches and is only recorded when passed:
+        ``fetched_at`` once, when the file is created; ``fetched_updated`` whenever a run adds
+        entries. A pre-existing file without ``fetched_at`` is not back-dated."""
         stamp = as_of.isoformat()
+        is_new = "as_of" not in self.meta
         self.meta.setdefault("as_of", stamp)
         self.meta["updated"] = stamp
+        if fetched_at is not None and self.changed:  # nothing fetched => nothing to date
+            real = fetched_at.isoformat()
+            if is_new:
+                self.meta.setdefault("fetched_at", real)
+            self.meta["fetched_updated"] = real
+        if self.changed:
+            self.dirty = True  # persist the stamped meta even if the last mid-run save was current
 
     def save(self) -> None:
         """Atomic write (temp file + rename); no-op for an in-memory cache or when unchanged."""

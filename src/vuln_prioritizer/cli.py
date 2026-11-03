@@ -3,7 +3,8 @@
     vuln-prioritizer run --db <navi.db> --overlay <yaml> --out <dir> [--offline] [--threat-first]
 
 Writes ``worklist.md``, ``worklist.csv``, ``excluded.csv`` (out-of-scope assets) and
-``informational.csv`` (Info-severity scanner output, not ranked) into ``--out`` (gitignored) and
+``informational.csv`` (Info-severity scanner output, not ranked) and ``executive_report.md``
+(toil saved, SLA compliance, per-role view, top risks) into ``--out`` (gitignored) and
 prints the ranked worklist to stdout. Reads navi.db + the overlay only; never writes to the
 Tenable tenant.
 """
@@ -13,13 +14,14 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
-from . import pipeline, worklist
+from . import pipeline, report, worklist
 
-OUTPUT_FILES = ("worklist.md", "worklist.csv", "excluded.csv", "informational.csv")
+OUTPUT_FILES = ("worklist.md", "worklist.csv", "excluded.csv", "informational.csv", "executive_report.md")
 
 
 def _parse_as_of(raw: str) -> datetime:
@@ -62,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--as-of", type=_parse_as_of, metavar="ISO8601",
                    help="fix the as-of time (due dates derive from it); default: now, UTC")
     r.add_argument("--top", type=int, default=15, help="rows to print to stdout (default 15)")
+    r.add_argument("--triage-minutes", type=float, metavar="M",
+                   help="executive report: assumed manual-triage minutes per finding, to illustrate analyst "
+                        "time saved (an operator assumption, labelled as such; omitted by default)")
+    r.add_argument("--no-timing", action="store_true",
+                   help="omit the measured time-to-worklist line so executive_report.md is byte-reproducible")
     return p
 
 
@@ -79,6 +86,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     def progress(msg: str) -> None:
         print(msg, file=sys.stderr, flush=True)
 
+    if args.triage_minutes is not None and args.triage_minutes <= 0:
+        parser.error("--triage-minutes must be > 0")
+
+    started = time.perf_counter()
     try:
         result = pipeline.run_pipeline(
             args.db,
@@ -103,8 +114,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows = worklist.build_rows(result)
     excluded = worklist.build_excluded_rows(result)
+    elapsed = None if args.no_timing else time.perf_counter() - started  # load -> ... -> rows
 
     args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "executive_report.md").write_text(
+        report.to_exec_markdown(
+            result, rows, excluded, elapsed_seconds=elapsed, triage_minutes=args.triage_minutes
+        ),
+        encoding="utf-8",
+    )
     (args.out / "worklist.md").write_text(worklist.to_markdown(result, rows, excluded), encoding="utf-8")
     (args.out / "worklist.csv").write_text(worklist.to_csv(rows, worklist.COLUMNS), encoding="utf-8")
     (args.out / "excluded.csv").write_text(

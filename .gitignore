@@ -9,3 +9,9 @@ __pycache__/
 # worklist outputs (real-data artifacts)
 out/
 worklist*.md
+executive_report.md
+excluded.csv
+informational.csv
+# frozen threat-intel caches list which CVEs a tenant holds; keep them under out/
+intel*.json
+demo-navi.db

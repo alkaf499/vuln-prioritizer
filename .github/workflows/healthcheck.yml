@@ -1,0 +1,89 @@
+name: Healthcheck
+
+# Mirrors threat-intel-toolkit's feed-healthcheck: an offline test job on every push / PR, plus a
+# weekly (and on-demand) job that smoke-tests the live threat-intel sources this skill depends on,
+# so a dead feed URL or an upstream format change surfaces as a failed run before it reaches users.
+#
+# The upstream exploit_check.py is imported unmodified from reference/ (gitignored in this repo),
+# so CI clones it there. No secrets are needed; nothing in this workflow touches a Tenable tenant.
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"   # every Monday 14:00 UTC
+  workflow_dispatch: {}      # allow manual runs from the Actions tab
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: https://github.com/kevinmhorvath/threat-intel-toolkit.git
+
+jobs:
+  tests:
+    # Offline suite: synthetic fixture + injected fakes, network blocked inside the tests.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Offline tests
+        run: python -m pytest -q
+
+      - name: Synthetic end-to-end (fixture -> report), offline and reproducible
+        run: |
+          mkdir -p "$RUNNER_TEMP/demo"
+          python -m vuln_prioritizer.fixtures.navi_fixture "$RUNNER_TEMP/demo/navi.db"
+          for n in a b; do
+            python -m vuln_prioritizer run --db "$RUNNER_TEMP/demo/navi.db" \
+              --overlay classification.example.yaml --out "$RUNNER_TEMP/demo/$n" \
+              --offline --as-of 2026-11-03T12:00:00Z --no-timing > /dev/null
+          done
+          test -s "$RUNNER_TEMP/demo/a/executive_report.md"
+          for f in worklist.md worklist.csv excluded.csv informational.csv executive_report.md; do
+            cmp "$RUNNER_TEMP/demo/a/$f" "$RUNNER_TEMP/demo/b/$f"
+          done
+          echo "byte-identical across runs"
+
+  feed-healthcheck:
+    # Live (network): only on the weekly schedule or a manual dispatch, never on push / PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch upstream threat-intel-toolkit (MIT) into reference/
+        run: git clone --depth 1 "$UPSTREAM_REPO" reference/threat-intel-toolkit
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Upstream source smoke test (KEV, EPSS, Metasploit, Nuclei, Exploit-DB, PoC aggregators)
+        working-directory: reference/threat-intel-toolkit/skills/exploit-availability-check/scripts
+        run: python3 healthcheck.py
+
+      - name: Live enrichment tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # raises GitHub API rate limits only
+        run: python -m pytest -q -m live

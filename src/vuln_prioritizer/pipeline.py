@@ -112,6 +112,11 @@ class PipelineResult:
     informational: tuple[Finding, ...] = ()
     """Info-severity findings (scanner output, not vulnerabilities): never enriched, scored or
     ranked; reported in their own section / ``informational.csv``."""
+    intel_fetched_at: str | None = None
+    """REAL wall-clock time the cache's intel was first fetched (``None`` = not recorded: an
+    offline run with no cache, a hand-made or pre-S5 cache). ``intel_as_of`` is only a label."""
+    intel_fetched_updated: str | None = None
+    """Real wall-clock time of the last run that added entries to the cache."""
 
 
 def split_informational(findings: list[Finding]) -> tuple[list[Finding], list[Finding]]:
@@ -178,6 +183,7 @@ def run_pipeline(
     progress_every: int = 100,
     save_every: int = 200,
     enrich: str = DEFAULT_ENRICH,
+    fetched_at: datetime | None = None,
 ) -> PipelineResult:
     """Run the whole pipeline and return the ranked result (no report files are written).
 
@@ -190,6 +196,9 @@ def run_pipeline(
     ``enrich`` (live runs): ``local`` (default) uses only the four cached feeds — CISA KEV,
     Metasploit, Exploit-DB, Nuclei — with no per-CVE network; ``full`` adds the per-CVE EPSS API
     and the nomi-sec / trickest PoC aggregators (about 3 HTTP calls per CVE).
+
+    ``fetched_at`` is the real wall-clock time recorded in the cache next to the ``as_of`` label
+    (default: now, UTC). It never influences scoring or ranking.
     """
     as_of = normalize_as_of(as_of)
     if enrich not in ENRICH_MODES:
@@ -226,7 +235,7 @@ def run_pipeline(
                 except Exception:  # noqa: BLE001 - recorded in caching.failed; re-raised below
                     pass
         finally:  # an interrupted / failed run still leaves a resumable cache
-            cache.stamp(as_of)
+            cache.stamp(as_of, fetched_at=normalize_as_of(fetched_at))
             cache.save()
         fetch = caching
         prewarm_hits = caching.cache_hits  # CVEs that were already in the file before this run
@@ -271,4 +280,6 @@ def run_pipeline(
         else None,
         enrich_mode=enrich if caching else None,
         informational=tuple(informational),
+        intel_fetched_at=cache.fetched_at if cache is not None else None,
+        intel_fetched_updated=cache.fetched_updated if cache is not None else None,
     )
