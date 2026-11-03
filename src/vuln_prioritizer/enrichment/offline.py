@@ -2,38 +2,32 @@
 
 ``enrich_findings`` takes an ``assess(cve) -> dict`` callable shaped like upstream
 threat-intel-toolkit's ``exploit_check.assess``. Offline, that callable is a lookup into a
-local JSON *cache* (CVE -> upstream-shaped dict). A CVE with no cache entry yields the
+local JSON *cache* (CVE -> upstream-shaped dict; see :mod:`.cache` for the file format, which
+may be a frozen artifact written by an earlier live run). A CVE with no cache entry yields the
 minimal ``{"cve": ...}`` record, which :func:`~.toolkit.to_intel` maps to "unknown" on every
 feed — never to "not on KEV". The scorer therefore only sees what navi.db itself carried
 plus whatever the cache asserts.
-
-Cache file format (JSON object)::
-
-    {"CVE-2099-0002": {"cve": "CVE-2099-0002", "kev_available": true, "kev": {"dateAdded": "2026-09-01"},
-                       "msf_available": true, "edb_available": true, "nuclei_available": true,
-                       "epss": 0.95, "tier": "RED - weaponized", "msf": [], "edb": [], "nomi": []}}
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .cache import IntelCache, IntelCacheError
 
-class IntelCacheError(ValueError):
-    """The offline intel cache is not a JSON object of CVE -> object."""
+__all__ = ["IntelCacheError", "load_intel_cache", "offline_assess"]
 
 
 def load_intel_cache(path: str | Path) -> dict[str, dict[str, Any]]:
-    """Read an offline cache file (keys upper-cased). Read-only."""
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise IntelCacheError(f"{path}: invalid JSON ({e})") from e
-    if not isinstance(data, dict) or not all(isinstance(v, dict) for v in data.values()):
-        raise IntelCacheError(f"{path}: expected a JSON object mapping CVE -> object")
-    return {str(k).upper(): v for k, v in data.items()}
+    """Read a cache file's entries (keys upper-cased; the ``_meta`` stamp is ignored). Read-only.
+
+    Unlike :meth:`IntelCache.load`, a missing file is an error here: an offline replay of a
+    cache that is not there is a mistake, not an empty cache."""
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"intel cache not found: {p}")
+    return IntelCache.load(p).entries
 
 
 def offline_assess(

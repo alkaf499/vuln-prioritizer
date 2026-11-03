@@ -40,9 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
                    "omitted => every asset is unknown/internal and flagged for re-evaluation")
     r.add_argument("--out", required=True, type=Path, help="output directory (created if absent)")
     r.add_argument("--offline", action="store_true",
-                   help="no network: enrichment answers from --intel-cache or 'unknown' (deterministic)")
-    r.add_argument("--intel-cache", type=Path,
-                   help="offline threat-intel cache (JSON: CVE -> exploit-availability-check result); needs --offline")
+                   help="no network: enrichment answers from --intel-cache (read-only) or 'unknown' (deterministic)")
+    r.add_argument("--intel-cache", type=Path, metavar="FILE",
+                   help="dated JSON threat-intel cache (CVE -> exploit-availability-check result). "
+                        "Live: written through (created if absent; an interrupted run resumes, cached CVEs "
+                        "are never re-fetched). With --offline: replayed read-only, so a live-enriched "
+                        "worklist is byte-reproducible")
+    r.add_argument("--enrich", choices=pipeline.ENRICH_MODES, default=None,
+                   help="live only. local (default): use ONLY the four cached feeds (CISA KEV, Metasploit, "
+                        "Exploit-DB, Nuclei) - no per-CVE network, evidence says PoC aggregators were not "
+                        "consulted. full: also per-CVE EPSS API + nomi-sec/trickest PoC repos "
+                        "(~3 HTTP calls per CVE; pair with --intel-cache and --max-lookups)")
+    r.add_argument("--max-lookups", type=int, metavar="N",
+                   help="live only: fetch at most N new CVEs this run, top-ranked first (cache hits are free); "
+                        "the rest are reported as deferred - re-run with the same cache to continue")
+    r.add_argument("--progress-every", type=int, default=100, metavar="N",
+                   help="live only: print a progress line to stderr every N fetches (0 = silent; default 100)")
     r.add_argument("--threat-first", action="store_true",
                    help="publish only threat-linked findings (KEV / weaponized or public exploit)")
     r.add_argument("--as-of", type=_parse_as_of, metavar="ISO8601",
@@ -54,8 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.intel_cache and not args.offline:
-        parser.error("--intel-cache requires --offline")
+    if args.max_lookups is not None and (args.offline or args.max_lookups < 0):
+        parser.error("--max-lookups applies to live runs only (not --offline) and must be >= 0")
+    if args.progress_every < 0:
+        parser.error("--progress-every must be >= 0")
+    if args.enrich is not None and args.offline:
+        parser.error("--enrich applies to live runs only (an --offline run looks nothing up)")
+    enrich = args.enrich or pipeline.DEFAULT_ENRICH
+
+    def progress(msg: str) -> None:
+        print(msg, file=sys.stderr, flush=True)
 
     try:
         result = pipeline.run_pipeline(
@@ -65,9 +86,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             threat_first=args.threat_first,
             as_of=args.as_of,
             intel_cache=args.intel_cache,
+            max_lookups=args.max_lookups,
+            enrich=enrich,
+            progress=progress if args.progress_every else None,
+            progress_every=args.progress_every,
         )
+    except KeyboardInterrupt:
+        note = f" Cache saved to {args.intel_cache}; re-run to resume." if args.intel_cache else ""
+        print(f"interrupted.{note}", file=sys.stderr)
+        return 130
     except (OSError, ValueError, RuntimeError, sqlite3.Error) as e:
-        # missing db/overlay, bad overlay/cache, missing tables, not a sqlite file
+        # missing db/overlay/cache, bad overlay/cache, missing tables, not a sqlite file
         print(f"error: {e}", file=sys.stderr)
         return 2
 

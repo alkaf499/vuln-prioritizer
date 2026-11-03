@@ -10,7 +10,15 @@ vuln-prioritizer run --db ~/tenable-lab/navi.db --overlay my-overlay.yaml --out 
 
 Writes `worklist.md`, `worklist.csv`, `excluded.csv` to `--out` (gitignored) and prints the ranked list.
 `--offline` = no network (enrichment from `--intel-cache` JSON or "unknown"); add `--as-of <ISO8601>` for
-byte-identical output. Read-only against the tenant. The Claude skill is `skills/vuln-prioritizer/SKILL.md`;
+byte-identical output. Read-only against the tenant.
+
+`--enrich local|full` (live; default `local`): `local` uses only the four cached feeds (CISA KEV, Metasploit,
+Exploit-DB, Nuclei) — no per-CVE network — and its evidence says PoC aggregators were not consulted; `full`
+adds per-CVE EPSS and the nomi-sec/trickest PoC repos (~3 HTTP calls per CVE).
+
+Live enrichment writes through a dated, resumable `--intel-cache FILE` (`--max-lookups N` fetches the
+top-ranked CVEs first; `--progress-every N` prints progress to stderr). Replaying that file with `--offline`
+reproduces the live-enriched worklist byte for byte. Code: `enrichment/cache.py`. The Claude skill is `skills/vuln-prioritizer/SKILL.md`;
 the plugin manifest is in `.claude-plugin/`.
 
 - `vuln_prioritizer.pipeline` / `worklist` / `cli` — S4 orchestration, row builder + renderers, entrypoint.

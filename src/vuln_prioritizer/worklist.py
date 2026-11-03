@@ -107,10 +107,18 @@ def _row(rank: int, sf: ScoredFinding, result: PipelineResult) -> dict[str, Any]
     rule = overlay_rule(sf.context)
     ef = result.enriched[sf.finding_id]
     f = ef.finding
-    raw_evidence = offline_wording(ef.evidence) if result.offline else ef.evidence
+    # Why intel may be missing: nothing was consulted (offline), or this finding's CVEs were
+    # deferred by --max-lookups. Either way "unreachable" would be false.
+    if result.offline:
+        not_consulted = "offline: threat-intel not consulted"
+    elif result.skipped_cves & set(f.cves):
+        not_consulted = "lookup budget reached: threat-intel not consulted for some CVEs"
+    else:
+        not_consulted = ""
+    raw_evidence = offline_wording(ef.evidence) if not_consulted else ef.evidence
     evidence = compact_evidence(raw_evidence)
-    if result.offline and ef.degraded:
-        evidence = f"[offline: threat-intel not consulted] {evidence}"
+    if not_consulted and ef.degraded:
+        evidence = f"[{not_consulted}] {evidence}"
     return {
         "rank": rank,
         "tier": rec["final_tier"],
@@ -225,11 +233,25 @@ def _kv_table(d: dict[str, Any], key_header: str) -> list[str]:
 def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: list[dict[str, Any]]) -> str:
     run, st = result.scoring, result.enrichment.stats
     view = "threat-first (threat-linked findings only)" if result.threat_first else "asset-first (all in-scope findings)"
-    mode = (
-        "offline (deterministic; live threat-intel NOT consulted)"
-        if result.offline
-        else "live threat-intel enrichment"
-    )
+    if result.offline and result.intel_cache_name:
+        mode = (
+            f"offline replay of frozen threat-intel cache `{result.intel_cache_name}` "
+            f"(intel as of {result.intel_as_of or 'unstamped'}; deterministic, no network)"
+        )
+    elif result.offline:
+        mode = "offline (deterministic; live threat-intel NOT consulted)"
+    else:
+        feeds = (
+            "local feeds only: CISA KEV, Metasploit, Exploit-DB, Nuclei; per-CVE EPSS and PoC aggregators not consulted"
+            if result.enrich_mode == "local"
+            else "full: cached feeds + per-CVE EPSS and PoC aggregators"
+        )
+        cached = (
+            f", written through cache `{result.intel_cache_name}` (intel as of {result.intel_as_of or 'unstamped'})"
+            if result.intel_cache_name
+            else ""
+        )
+        mode = f"live threat-intel ({feeds}){cached}"
     L: list[str] = [
         "# Vulnerability Remediation Worklist",
         "",
@@ -251,6 +273,15 @@ def to_markdown(result: PipelineResult, rows: list[dict[str, Any]], excluded: li
     L += [
         f"- Threat-intel enrichment: {st.gated} of {st.findings} findings passed the gate; "
         f"{st.distinct_cves} distinct CVE lookup(s); {st.failures} failure(s)",
+    ]
+    if result.lookups is not None:
+        lk = result.lookups
+        L.append(
+            f"- Live lookups: {lk.fetched} fetched, {lk.cache_hits} already in the cache, "
+            f"{lk.failed} failed, {lk.deferred} deferred by --max-lookups "
+            f"(top-ranked CVEs are looked up first; deferred ones are 'not consulted', re-run to continue)"
+        )
+    L += [
         f"- Assets whose context needs re-evaluation (unknown environment / assumed exposure): "
         f"**{run.summary()['reevaluate_context']}** finding(s)",
         "",
@@ -323,6 +354,10 @@ def to_chat(result: PipelineResult, rows: list[dict[str, Any]], *, top: int = 15
         "by tier: " + (", ".join(f"{k}={v}" for k, v in run.by_tier().items()) or "none"),
         "",
     ]
+    if result.intel_cache_name:
+        L.insert(3, f"threat-intel cache: {result.intel_cache_name} (intel as of {result.intel_as_of or 'unstamped'})")
+    if result.lookups is not None and result.lookups.deferred:
+        L.insert(3, f"{result.lookups.deferred} CVE(s) deferred by --max-lookups; re-run with the same cache to continue")
     for r in rows[:top]:
         due = r["due"] or "next patch cycle"
         L.append(f"{r['rank']:>3}. {r['tier']} · {r['sla']} · due {due}")

@@ -49,6 +49,8 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", boom)
     monkeypatch.setattr(toolkit, "make_default_assess", boom)
     monkeypatch.setattr(enrich, "make_default_assess", boom)  # the name enrich_findings actually calls
+    monkeypatch.setattr(pipeline, "make_default_assess", boom)  # the names run_pipeline calls (live mode)
+    monkeypatch.setattr(pipeline, "make_local_assess", boom)
 
 
 @pytest.fixture()
@@ -263,9 +265,11 @@ def test_missing_db_is_a_clean_error(tmp_path, capsys):
     assert not (tmp_path / "o").exists()
 
 
-def test_intel_cache_requires_offline(navi_db, tmp_path, cache_file):
+def test_max_lookups_is_rejected_for_offline_runs(navi_db, tmp_path, cache_file):
+    # (--intel-cache itself is valid with or without --offline: read-only replay vs write-through)
     with pytest.raises(SystemExit) as e:
-        cli.main(["run", "--db", str(navi_db), "--out", str(tmp_path / "o"), "--intel-cache", str(cache_file)])
+        cli.main(["run", "--db", str(navi_db), "--out", str(tmp_path / "o"), "--offline",
+                  "--intel-cache", str(cache_file), "--max-lookups", "10"])
     assert e.value.code == 2
 
 

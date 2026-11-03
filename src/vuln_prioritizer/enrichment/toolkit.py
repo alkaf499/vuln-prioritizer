@@ -160,6 +160,46 @@ def make_default_assess() -> Callable[[str], dict[str, Any]]:
     return mod.assess
 
 
+LOCAL_MODE = "local"
+"""Value of the ``enrich_mode`` key that marks a record produced without per-CVE network."""
+
+_PER_CVE_HELPERS = ("epss", "nomisec", "trickest")  # the only upstream calls that hit the network per CVE
+
+
+def make_local_assess() -> Callable[[str], dict[str, Any]]:
+    """Upstream ``assess`` restricted to the four cached feeds (KEV, Metasploit, Exploit-DB, Nuclei).
+
+    The feeds download once (24h TTL, retry/backoff installed, optional ``GITHUB_TOKEN``); every
+    lookup after that is an in-memory index hit. The three per-CVE network helpers upstream's
+    ``assess`` calls — EPSS API, nomi-sec, trickest — are swapped for no-op stubs for the
+    duration of each call and restored afterwards, so a ``full`` assess in the same process is
+    unaffected. Upstream's tier logic is reused unchanged; the result is tagged
+    ``enrich_mode: "local"`` so :func:`to_intel` and the evidence text never claim that PoC
+    aggregators or EPSS were consulted.
+    """
+    mod = load_exploit_check()
+    install_resilient_fetch(mod)
+    stubs = {
+        "epss": lambda cve, *a, **k: (None, None),
+        "nomisec": lambda cve, *a, **k: [],
+        "trickest": lambda cve, *a, **k: [],
+    }
+
+    def assess(cve: str) -> dict[str, Any]:
+        saved = {name: getattr(mod, name) for name in _PER_CVE_HELPERS}
+        try:
+            for name, stub in stubs.items():
+                setattr(mod, name, stub)
+            result = dict(mod.assess(cve))
+        finally:
+            for name, fn in saved.items():
+                setattr(mod, name, fn)
+        result["enrich_mode"] = LOCAL_MODE
+        return result
+
+    return assess
+
+
 # --------------------------------------------------------------------------
 # normalized per-CVE intel
 # --------------------------------------------------------------------------
@@ -203,6 +243,9 @@ class CveIntel:
     """Names of feeds that were unreachable / returned nothing usable."""
     error: str | None = None
     """Set when the whole lookup failed (exception)."""
+    poc_consulted: bool = True
+    """False for ``local``-mode records: EPSS API and the nomi-sec / trickest PoC aggregators
+    were NOT consulted, so 'no exploit found' only covers Metasploit / Exploit-DB / Nuclei."""
 
     @property
     def degraded(self) -> bool:
@@ -234,8 +277,9 @@ def to_intel(raw: Mapping[str, Any]) -> CveIntel:
         )
         if not raw.get(key, False) and not (key == "kev_available" and kev)
     ]
+    local = raw.get("enrich_mode") == LOCAL_MODE  # EPSS / PoC aggregators deliberately not consulted
     epss = raw.get("epss")
-    if epss is None:
+    if epss is None and not local:
         missing.append("EPSS")
 
     tier_key = str(raw.get("tier", "")).split(" ")[0]
@@ -261,4 +305,5 @@ def to_intel(raw: Mapping[str, Any]) -> CveIntel:
         poc_repos=len(raw.get("nomi") or []),
         top_stars=int(raw.get("top_star") or 0),
         feeds_missing=tuple(missing),
+        poc_consulted=not local,
     )

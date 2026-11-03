@@ -43,7 +43,26 @@ Same scoring; the worklist is limited to threat-linked findings (on KEV, weaponi
 
 ## Offline / deterministic mode
 
-`--offline` makes **no network calls**: enrichment answers from `--intel-cache <json>` (CVE → exploit-availability-check result) or reports "unknown". Use it for demos, CI and reproducible audits; add `--as-of <ISO8601>` to freeze the due-date anchor for byte-identical output. Without `--offline`, enrichment is live (optional `GITHUB_TOKEN` in the environment raises GitHub rate limits; never store or print it).
+`--offline` makes **no network calls**: enrichment answers from `--intel-cache <json>` (read-only) or reports "unknown". Use it for demos, CI and reproducible audits; add `--as-of <ISO8601>` to freeze the due-date anchor for byte-identical output.
+
+## Live enrichment and the frozen intel cache
+
+Without `--offline`, enrichment is live. Two modes (`--enrich local|full`):
+
+- **`local` (default):** only the four cached feeds — CISA KEV, Metasploit, Exploit-DB, Nuclei. They download once (~35 MB, 24h TTL); after that every CVE is an in-memory lookup, so tens of thousands of CVEs take seconds. No per-CVE network, so no live EPSS: EPSS is used only if navi.db itself has an `epss` table (some tenants' and the event lab's navi.db do not), and otherwise a finding with no VPR and no KEV has no probability signal. Evidence for a CVE found nowhere reads "no exploit in Metasploit/Exploit-DB/Nuclei; PoC aggregators not consulted" — never "no public exploit found". Report that distinction accurately.
+- **`full`:** adds the per-CVE EPSS API and the nomi-sec / trickest GitHub PoC aggregators — about three HTTP calls per CVE, so a real tenant can mean tens of thousands of requests. For `full`, **always use a cache and start small**:
+
+```
+vuln-prioritizer run --db <navi.db> --overlay <overlay.yaml> --out <dir> --enrich full --intel-cache <dir>/intel.json --max-lookups 200
+```
+
+A `full` run re-fetches (upgrades) cache entries that an earlier `local` run wrote; a `local` run accepts either.
+
+- `--intel-cache FILE` is written through, **dated** (`_meta.as_of`), and **resumable**: an interrupted or capped run is continued by re-running the same command; CVEs already in the file are never re-fetched. Lookups that failed, or ran while a core feed was down, are not frozen and are retried next time.
+- `--max-lookups N` fetches at most N new CVEs per run, **top-ranked first** (ranked by a preliminary scoring pass), so a small N covers the head of the worklist. Deferred CVEs are reported as "not consulted" (never "unreachable") — say so, and offer to continue.
+- Progress lines go to stderr (`--progress-every N`, 0 = silent). `GITHUB_TOKEN` in the environment raises GitHub rate limits; never store or print it.
+- **Replay:** `--offline --intel-cache <dir>/intel.json --as-of <ISO8601>` reproduces a live-enriched worklist **byte for byte**, and the report states the intel's as-of date. This is how a live result becomes a reproducible demo or audit artifact.
+- Treat the cache like other real-data artifacts: it lists which CVEs your tenant holds. Keep it under `out/` (gitignored), not in the repo, unless you deliberately publish a synthetic one.
 
 ## How to report results
 

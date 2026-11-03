@@ -203,7 +203,12 @@ def describe(i: CveIntel) -> str:
         stars = f", top {i.top_stars}★" if i.top_stars else ""
         parts.append(f"{i.poc_repos} GitHub PoC repo{'s' if i.poc_repos != 1 else ''}{stars}")
     if i.maturity is Maturity.NONE:
-        parts.append("no public exploit found")
+        # local mode never looked at the PoC aggregators: don't claim more than was checked
+        parts.append(
+            "no public exploit found"
+            if i.poc_consulted
+            else "no exploit in Metasploit/Exploit-DB/Nuclei; PoC aggregators not consulted"
+        )
     elif i.maturity is Maturity.UNKNOWN:
         feeds = [f for f in i.feeds_missing if f in ("Metasploit", "Exploit-DB", "Nuclei")]
         why = f" ({', '.join(feeds)} unreachable)" if feeds else ""
