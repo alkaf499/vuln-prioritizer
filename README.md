@@ -40,9 +40,9 @@ flowchart LR
 
 On a reference tenant of **19,052 findings / 1,394 assets**:
 
-| | |
+| 19,052 findings / 1,394 assets | Result |
 |---|---|
-| Analyst's starting list | **102 urgent** — a **99.5% reduction** |
+| Worklist an analyst actually works | **102 urgent** — a **99.5% reduction** |
 | Informational scan artifacts separated | **8,769** |
 | Actively-exploited vulns the vendor score rated *Low* | **9** |
 | Time to worklist | **< 1s**, byte-reproducible |
