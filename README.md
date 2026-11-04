@@ -52,10 +52,14 @@ On a reference tenant of **19,052 findings / 1,394 assets**:
 ```bash
 pip install -e .
 
-# Rank, offline and deterministic (reads a navi.db + your asset-context overlay)
+# No tenant, no API key: build the 100% synthetic fixture and run the whole
+# scored pipeline offline, then replay it byte-for-byte to prove determinism.
+bash scripts/demo.sh
+
+# Against your own data: point --db at a navi.db exported by navi (read-only).
 vuln-prioritizer run --db ~/navi.db --overlay classification.example.yaml --out out --offline
 
-# Add live threat intel (CISA KEV + exploit maturity), cached and replayable
+# Live, key-free threat intel (CISA KEV + exploit maturity), cached and replayable.
 vuln-prioritizer run --db ~/navi.db --overlay classification.example.yaml --out out \
   --intel-cache out/intel.json
 ```
