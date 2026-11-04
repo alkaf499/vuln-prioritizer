@@ -38,14 +38,16 @@ flowchart LR
     S --> W[ranked worklist<br/>+ executive report]
 ```
 
-On a reference tenant of **19,052 findings / 1,394 assets**:
+On a live run against the reference tenant (**20,522 findings / 1,394 assets**):
 
-| 19,052 findings / 1,394 assets | Result |
+| 20,522 findings / 1,394 assets | Result |
 |---|---|
-| Worklist an analyst actually works | **102 urgent** — a **99.5% reduction** |
-| Informational scan artifacts separated | **8,769** |
-| Actively-exploited vulns the vendor score rated *Low* | **9** |
-| Time to worklist | **< 1s**, byte-reproducible |
+| **Tier 0 — emergencies** · internet-exposed + actively exploited (~12h) | **25** |
+| Tier 1 — due within 24h | **161** |
+| Ranked remediation worklist (all tiers) | **11,123** |
+| Informational scanner findings separated out | **9,399** |
+| Actively-exploited vulns the vendor rated *Low*, lifted by KEV/exploit evidence | **9** |
+| Time to worklist | **6.2 s** live (incl. feed fetch) · sub-second offline, byte-reproducible |
 
 ## Quickstart
 
