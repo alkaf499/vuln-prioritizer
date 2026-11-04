@@ -95,10 +95,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "--no-only-unclassified sends every asset")
     c.add_argument("--model", metavar="ID",
                    help="model id (default claude-haiku-5-5, a fast/cheap model)")
-    c.add_argument("--batch", type=int, metavar="N", help="assets per API request (default 20)")
+    c.add_argument("--batch", type=int, metavar="N", help="assets per API request (default 8; scanner signals add tokens per asset)")
     c.add_argument("--min-confidence", type=float, metavar="X",
-                   help="abstain below this confidence (default 0.7; external exposure and non-standard "
-                        "criticality need at least 0.9)")
+                   help="abstain below this confidence (default 0.7; cj_support/rto_defined criticality need "
+                        "at least 0.9; external exposure and crown_jewel are never set by the classifier)")
     c.add_argument("--cache", type=Path, metavar="FILE",
                    help="resumable (hostname, OS) cache; default: next to --out (<out>.cache.json)")
     c.add_argument("--limit", type=int, metavar="N",

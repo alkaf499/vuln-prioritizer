@@ -114,8 +114,9 @@ def render_overlay(
         "# Review it, then pass it as a LATER --overlay so hand-written overlays win:",
         "#   vuln-prioritizer run --overlay classification.yaml --overlay out/classification.ai.yaml ...",
         f"# {len(written)} rule(s) written; {len(abstained)} asset(s) abstained (no rule: they stay unknown and flagged).",
-        f"# Abstain policy: confidence < {min_confidence:.2f}, unknown environment, or a high-privilege result "
-        f"(external / non-standard criticality) below {max(min_confidence, 0.9):.2f}.",
+        f"# Abstain policy: confidence < {min_confidence:.2f}, unknown environment, exposure=external or "
+        f"criticality=crown_jewel (never set by the classifier), or other non-standard criticality below "
+        f"{max(min_confidence, 0.9):.2f}.",
         "# The classifier never sets in_scope: it cannot exclude an asset.",
         "defaults: { environment: unknown, exposure: internal, criticality: standard, in_scope: true }",
     ]

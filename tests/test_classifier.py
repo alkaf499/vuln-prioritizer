@@ -159,16 +159,32 @@ def test_unknown_environment_abstains():
     assert "environment" in abstain_reason(_c(environment="unknown"), 0.0)
 
 
-@pytest.mark.parametrize("over", [{"exposure": "external"}, {"criticality": "crown_jewel"},
-                                  {"criticality": "cj_support"}, {"criticality": "rto_defined"}])  # fmt: skip
-def test_high_privilege_results_need_higher_confidence(over):
+@pytest.mark.parametrize("over", [{"criticality": "cj_support"}, {"criticality": "rto_defined"}])
+def test_other_raised_criticality_needs_higher_confidence(over):
     assert abstain_reason(_c(confidence=0.85, **over), 0.7)  # fine for a laptop, not for these
     assert abstain_reason(_c(confidence=0.9, **over), 0.7) is None
     assert abstain_reason(_c(confidence=0.85), 0.7) is None  # ordinary result at 0.85 is fine
 
 
+@pytest.mark.parametrize("over", [{"exposure": "external"}, {"criticality": "crown_jewel"},
+                                  {"exposure": "external", "criticality": "crown_jewel"}])  # fmt: skip
+@pytest.mark.parametrize("conf", [0.7, 0.9, 0.99, 1.0])
+def test_external_and_crown_jewel_are_hard_blocked_at_any_confidence(over, conf):
+    why = abstain_reason(_c(confidence=conf, **over), 0.0)
+    assert why and "high-privilege" in why and "never set" in why
+
+
+def test_hard_blocked_answers_never_become_rules_even_at_full_confidence():
+    llm = make_llm(lambda assets: [good(a["id"], exposure="external", criticality="crown_jewel", environment="production",
+                                        role="perimeter", confidence=1.0) for a in assets])  # fmt: skip
+    out = classify(keys("fw-1"), llm)
+    assert len(out.classified) == 1  # a valid enum answer, cached ...
+    text, abstained = render_overlay(out.classified, min_confidence=0.0)
+    assert parse_overlay(text).rules == () and len(abstained) == 1  # ... but never written
+
+
 def test_sensitive_floor_never_drops_below_min_confidence():
-    assert abstain_reason(_c(confidence=0.92, exposure="external"), 0.95)
+    assert abstain_reason(_c(confidence=0.92, criticality="cj_support"), 0.95)
 
 
 # --------------------------------------------------------------------------
@@ -377,7 +393,7 @@ def _classified(**kw):
     ks = [AssetKey("endpoint #1", "Microsoft Windows 10 Pro"), AssetKey("fw-1", "Palo Alto Networks PAN-OS 10")]
     llm = make_llm(lambda assets: [
         good(0, **kw),
-        good(1, environment="production", exposure="external", role="perimeter", confidence=0.97,
+        good(1, environment="production", exposure="internal", role="perimeter", confidence=0.97,
              rationale="firewall: internet facing by nature"),
     ])  # fmt: skip
     return classify(ks, llm)
@@ -396,14 +412,14 @@ def test_overlay_yaml_shape_and_roundtrip_through_the_real_loader(tmp_path):
     assert len(ov.rules) == 2
     ep, fw = ov.rules  # sorted by hostname: "endpoint #1" < "fw-1"
     assert ep.role == "workstation" and ep.environment is Environment.NON_PRODUCTION
-    assert fw.role == "perimeter" and fw.exposure is Exposure.EXTERNAL and fw.environment is Environment.PRODUCTION
+    assert fw.role == "perimeter" and fw.exposure is Exposure.INTERNAL and fw.environment is Environment.PRODUCTION
     assert ep.source == "ai-classifier (claude-test, 2026-11-03, conf=0.95)"
     assert fw.source == "ai-classifier (claude-test, 2026-11-03, conf=0.97)"
     assert ep.rationale == "end-user machine" and fw.rationale == "firewall: internet facing by nature"
     assert ov.defaults.environment is Environment.UNKNOWN and ov.defaults.exposure is Exposure.INTERNAL
 
     ctx = resolve_context(Asset("x", hostname="fw-1", operating_system="Palo Alto Networks PAN-OS 10"), overlay=ov)
-    assert ctx.exposure.value is Exposure.EXTERNAL and ctx.role.value == "perimeter"
+    assert ctx.exposure.value is Exposure.INTERNAL and ctx.role.value == "perimeter"  # the AI never sets external
 
 
 def test_output_is_deterministic():

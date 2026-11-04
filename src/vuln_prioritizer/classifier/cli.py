@@ -25,6 +25,7 @@ from .cache import ClassifierCache
 from .engine import DEFAULT_BATCH, classify_keys, targets
 from .llm import DEFAULT_MODEL, LLM, AnthropicHTTP, LLMError, MissingApiKey, api_key_from_env
 from .render import render_overlay
+from .signals import gather_signals
 from .validate import DEFAULT_MIN_CONFIDENCE, SAFE_TOKEN
 
 DEFAULT_OUT = Path("out/classification.ai.yaml")
@@ -87,9 +88,21 @@ def run_classify(
           f"{len(keys) - uncached} cached, {uncached} to classify with {model}")
     if cache.dropped:
         err(f"note: ignored {cache.dropped} invalid cache entr{'y' if cache.dropped == 1 else 'ies'} (will re-classify)")
+    if cache.stale:
+        err(f"note: discarded {cache.stale} cache entr{'y' if cache.stale == 1 else 'ies'} from an older "
+            "input format (fewer signals); those assets are re-classified")
     if args.dry_run:
         print("dry run: nothing sent, nothing written")
         return 0
+
+    try:
+        pending = [k for k in keys if cache.get(k) is None]
+        signals = gather_signals(args.db, pending) if pending else {}
+    except (OSError, sqlite3.Error) as e:
+        err(f"note: could not read scanner signals ({e}); classifying on hostname + OS only")
+        signals = {}
+    if pending:
+        print(f"signals found for {len(signals)}/{len(pending)} asset(s) to classify")
 
     try:
         outcome = classify_keys(
@@ -99,6 +112,7 @@ def run_classify(
             today=today,
             cache=cache,
             batch_size=batch,
+            signals=signals,
             progress=err,
         )
     except MissingApiKey:

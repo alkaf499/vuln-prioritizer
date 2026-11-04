@@ -25,8 +25,8 @@ restricts itself to a fixed list; the first five match the example overlay's rol
 
 DEFAULT_MIN_CONFIDENCE = 0.7
 SENSITIVE_MIN_CONFIDENCE = 0.9
-"""Floor for high-privilege results: external exposure or any non-standard criticality. These
-raise urgency, and a hostname is only a claim - so they need near-certainty or the asset abstains."""
+"""Floor for the remaining raised-urgency results (non-standard criticality other than
+crown_jewel). ``external`` and ``crown_jewel`` are hard-blocked in ``abstain_reason``."""
 
 MAX_RATIONALE = 140
 _RATIONALE_BAD = re.compile(r"[^A-Za-z0-9 .,;:()/+_=-]")
@@ -107,7 +107,15 @@ def abstain_reason(c: Classification, min_confidence: float) -> str | None:
     """Why this classification must NOT become an overlay rule (``None`` = usable).
 
     Thresholds are applied here, at render time, not at validation, so the cache survives
-    changing ``--min-confidence``."""
+    changing ``--min-confidence``.
+
+    ``exposure=external`` and ``criticality=crown_jewel`` are NEVER written, at any confidence:
+    only a human (hand overlay / CMDB) may declare an asset internet-facing or a crown jewel
+    (CLAUDE.md S4.5). The model may still answer them (they are valid enum values); the asset
+    then abstains and stays unknown + flagged for review."""
+    if c.exposure is Exposure.EXTERNAL or c.criticality is Criticality.CROWN_JEWEL:
+        what = "exposure=external" if c.exposure is Exposure.EXTERNAL else "criticality=crown_jewel"
+        return f"high-privilege result ({what}) is never set by the classifier; a human must decide"
     if c.environment is Environment.UNKNOWN:
         return "model could not determine the environment"
     if c.confidence < min_confidence:

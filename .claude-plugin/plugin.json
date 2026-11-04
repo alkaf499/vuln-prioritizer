@@ -28,6 +28,6 @@
     ],
     "data_access": "read-only",
     "requires_api_keys": false,
-    "repository": "https://github.com/REPLACE-ME/vuln-prioritizer"
+    "repository": "https://github.com/alkaf499/vuln_prioritizer"
   }
 }

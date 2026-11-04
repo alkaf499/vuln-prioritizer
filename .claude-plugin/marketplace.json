@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "A single-plugin marketplace hosting the Context-Aware Vulnerability Prioritization skill (SWARM Global 2026).",
   "owner": {
-    "name": "REPLACE-ME"
+    "name": "alkaf499"
   },
   "plugins": [
     {
