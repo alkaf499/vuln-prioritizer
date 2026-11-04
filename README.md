@@ -17,6 +17,7 @@ real threat intelligence, and no guessing.
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
 <img alt="Tests" src="https://img.shields.io/badge/tests-489%20passing-brightgreen.svg">
 <img alt="Runtime deps" src="https://img.shields.io/badge/runtime%20deps-none-lightgrey.svg">
+<a href="https://exchange.tenable.com/"><img alt="Listed on CyberAgents Exchange" src="https://img.shields.io/badge/CyberAgents%20Exchange-Listed-E7FF00?style=flat-square&labelColor=1E2426"></a>
 </p>
 
 ---

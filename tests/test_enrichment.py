@@ -445,7 +445,10 @@ def test_install_reads_token_from_env_only(monkeypatch):
 # the REAL upstream script, with the network forced dead (still offline)
 # --------------------------------------------------------------------------
 def test_real_exploit_check_degrades_to_unknown_when_all_feeds_dead(monkeypatch, tmp_path):
-    ec = tk.load_exploit_check()
+    try:
+        ec = tk.load_exploit_check()
+    except FileNotFoundError as exc:
+        pytest.skip(f"upstream exploit_check.py not vendored into reference/: {exc}")
     monkeypatch.setattr(ec, "CACHE", str(tmp_path))      # never touch ~/.cache
     monkeypatch.setattr(ec, "_IDX", {})
     monkeypatch.setattr(ec, "_fetch_bytes", ec._fetch_bytes)  # restored on teardown
