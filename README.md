@@ -22,10 +22,6 @@ real threat intelligence, and no guessing.
 
 ---
 
-A scanner hands you tens of thousands of findings and no answer to the only question that matters:
-**what do I fix first?** Sorting by CVSS is wrong — it measures theoretical severity, not whether a flaw
-is actually being exploited, nor whether it sits on an internet-facing crown jewel or a dev laptop.
-
 `vuln-prioritizer` fuses **ground-truth inventory**, **live exploit intelligence**, and **asset context**
 into a two-layer model, and produces a worklist where every item carries its evidence, its tier, and its
 due date — and where the same inputs always produce the same answer.
