@@ -93,9 +93,7 @@ the AI classifier, CLI reference, and limitations.
 
 [navi](https://github.com/packetchaos/navi) for Tenable inventory ·
 [threat-intel-toolkit](https://github.com/kevinmhorvath/threat-intel-toolkit) for key-free exploit
-intelligence. Both MIT, both on the Tenable CyberAgents Exchange — chaining open security components is
-what the Exchange is for.
-
+intelligence. Both MIT, both on the Tenable CyberAgents Exchange.
 ## Install as a Claude Code plugin
 
 ```
