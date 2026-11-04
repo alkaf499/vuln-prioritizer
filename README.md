@@ -24,7 +24,7 @@ real threat intelligence, and no guessing.
 
 `vuln-prioritizer` fuses **ground-truth inventory**, **live exploit intelligence**, and **asset context**
 into a two-layer model, and produces a worklist where every item carries its evidence, its tier, and its
-due date — and where the same inputs always produce the same answer.
+due date and where the same inputs always produce the same answer.
 
 ```mermaid
 flowchart LR
@@ -38,8 +38,8 @@ On a live run against the reference tenant (**20,522 findings / 1,394 assets**):
 
 | 20,522 findings / 1,394 assets | Result |
 |---|---|
-| **Tier 0 — emergencies** · internet-exposed + actively exploited (~12h) | **25** |
-| Tier 1 — due within 24h | **161** |
+| **Tier 0 - emergencies** · internet-exposed + actively exploited (~12h) | **25** |
+| Tier 1 - due within 24h | **161** |
 | Ranked remediation worklist (all tiers) | **11,123** |
 | Informational scanner findings separated out | **9,399** |
 | Actively-exploited vulns the vendor rated *Low*, lifted by KEV/exploit evidence | **9** |
@@ -67,22 +67,22 @@ Inventory comes from [navi](https://github.com/packetchaos/navi) (Tenable → lo
 
 A worklist row explains itself:
 
-> **Tier 0 · Emergency ~12h / out-of-band** — `fw-edge-01` (perimeter_firewall) · CVE-2026-109618
+> **Tier 0 · Emergency ~12h / out-of-band** - `fw-edge-01` (perimeter_firewall) · CVE-2026-109618
 > *Evidence:* CVE-2026-109618: on CISA KEV since 2026-10-26; Exploit-DB 1 entry; Nuclei template
 > *Inputs:* impact CRITICAL [cvss_unattributed 9.8] x probability CRITICAL [vpr 9.5] -> T1; asset class externally_exposed (shift +1, applied +1) -> T0; env production[overlay], exposure external[overlay], criticality standard[overlay_default]; overlay rule 3 (perimeter_firewall)
 
 ## Why deterministic
 
-Every tier is a reproducible function of recorded inputs — CVSS, VPR, EPSS, CISA KEV, exploit maturity,
-asset context. Same inputs, same answer, byte for byte, including live-enriched runs replayed from a
+Every tier is a reproducible function of recorded inputs - CVSS, VPR, EPSS, CISA KEV, exploit maturity,
+asset context. Same inputs, same answer, byte for byte, including live enriched runs replayed from a
 frozen cache. An LLM may *propose* asset classifications, but it is **firewalled from scoring**, cannot
 set `external` or `crown_jewel`, and abstains rather than fabricate.
 
-- **Read-only** — never writes to your tenant. Verified by test.
-- **Auditable** — every tier records the inputs and sources that produced it.
-- **Honest about gaps** — flags what needs a human instead of guessing.
+- **Read-only** - never writes to your tenant. Verified by test.
+- **Auditable** - every tier records the inputs and sources that produced it.
+- **Honest about gaps** - flags what needs a human instead of guessing.
 
-**→ [Full documentation](DOCS.md)** — the scoring model, asset-context overlays, enrichment modes,
+**→ [Full documentation](DOCS.md)** - the scoring model, asset-context overlays, enrichment modes,
 the AI classifier, CLI reference, and limitations.
 
 ## Built on
