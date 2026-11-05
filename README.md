@@ -48,6 +48,8 @@ On a live run against the reference tenant (**20,522 findings / 1,394 assets**):
 ## Quickstart
 
 ```bash
+git clone https://github.com/alkaf499/vuln-prioritizer
+cd vuln-prioritizer
 pip install -e .
 
 # No tenant, no API key: build the 100% synthetic fixture and run the whole
@@ -56,11 +58,23 @@ bash scripts/demo.sh
 
 # Against your own data: point --db at a navi.db exported by navi (read-only).
 vuln-prioritizer run --db ~/navi.db --overlay classification.example.yaml --out out --offline
+```
+
+**One-time setup for live runs.** Enrichment imports `exploit_check.py` from
+[threat-intel-toolkit](https://github.com/kevinmhorvath/threat-intel-toolkit) and **runs that
+third-party code in-process**. It is deliberately not vendored here, so you fetch it yourself and can
+audit it first:
+
+```bash
+git clone --depth 1 https://github.com/kevinmhorvath/threat-intel-toolkit reference/threat-intel-toolkit
 
 # Live, key-free threat intel (CISA KEV + exploit maturity), cached and replayable.
 vuln-prioritizer run --db ~/navi.db --overlay classification.example.yaml --out out \
   --intel-cache out/intel.json
 ```
+
+Already have a checkout? Point `EXPLOIT_CHECK_PATH` at its `exploit_check.py` instead. `--offline` runs
+need none of this.
 
 Inventory comes from [navi](https://github.com/packetchaos/navi) (Tenable → local SQLite). Outputs land in
 `out/`: `worklist.md` / `.csv`, `executive_report.md`, plus `informational.csv` and `excluded.csv`.
@@ -93,7 +107,7 @@ intelligence. Both MIT, both on the Tenable CyberAgents Exchange.
 ## Install as a Claude Code plugin
 
 ```
-/plugin marketplace add alkaf499/vuln_prioritizer
+/plugin marketplace add alkaf499/vuln-prioritizer
 /plugin install vuln-prioritizer@vuln-prioritizer-marketplace
 ```
 

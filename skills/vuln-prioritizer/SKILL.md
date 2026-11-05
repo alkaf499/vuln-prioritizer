@@ -17,6 +17,16 @@ The skill reads `navi.db`, the CMDB overlay and public threat-intel feeds. It **
 2. **`--overlay`** path to the CMDB classification overlay YAML (see `classification.example.yaml`; synthetic). Asset environment / exposure / criticality / scope are CMDB facts, not scanner facts. Without an overlay every asset is "unknown, internal, in scope" and flagged for re-evaluation — say so.
 3. **`--out`** output directory (default `./out`, gitignored).
 
+## Setup for live enrichment (once)
+
+Live runs import `exploit_check.py` from [threat-intel-toolkit](https://github.com/kevinmhorvath/threat-intel-toolkit) and **run that third-party code in-process**; it is not vendored in this repo. If `reference/threat-intel-toolkit/` is absent, fetch it once — or set `EXPLOIT_CHECK_PATH` to an existing checkout:
+
+```
+git clone --depth 1 https://github.com/kevinmhorvath/threat-intel-toolkit reference/threat-intel-toolkit
+```
+
+Without it a live run raises `FileNotFoundError`. `--offline` runs need none of this.
+
 ## Default pipeline — asset-first
 
 ```

@@ -126,6 +126,16 @@ overlay, and is invalid wherever addressing doesn't reflect reachability (e.g. r
 
 Powered by [threat-intel-toolkit](https://github.com/kevinmhorvath/threat-intel-toolkit) (key-free).
 
+**Setup (once).** Enrichment imports the upstream `exploit_check.py` and **runs that third-party code
+in-process**, so it is not vendored here — fetch it before any live run, or set `EXPLOIT_CHECK_PATH` to
+an existing checkout:
+
+```bash
+git clone --depth 1 https://github.com/kevinmhorvath/threat-intel-toolkit reference/threat-intel-toolkit
+```
+
+`--offline` runs need none of this.
+
 **`--enrich local` (default)** — CISA KEV, Metasploit, Exploit-DB and Nuclei from locally cached feeds.
 One ~35 MB download, then every CVE resolves in-memory. No per-CVE network calls.
 
